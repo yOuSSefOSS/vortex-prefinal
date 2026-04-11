@@ -1,0 +1,66 @@
+@import "tailwindcss";
+
+@theme {
+  --color-brand-50: #e2e8f0;
+  --color-brand-100: #cbd5e1;
+  --color-brand-200: #94a3b8;
+  --color-brand-300: #64748b;
+  --color-brand-400: #475569;
+  --color-brand-500: #334155;
+  --color-brand-600: #1e293b;
+  --color-brand-700: #1f2937;
+  --color-brand-800: #111827;
+  --color-brand-900: #030712;
+
+  --color-accent-neon: #00f0ff;
+  --color-accent-blue: #0ea5e9;
+  --color-accent-pink: #ec4899;
+}
+
+:root {
+  --color-brand-50: #e2e8f0;
+  --color-brand-100: #cbd5e1;
+  --color-brand-200: #94a3b8;
+  --color-brand-300: #64748b;
+  --color-brand-400: #475569;
+  --color-brand-500: #334155;
+  --color-brand-600: #1e293b;
+  --color-brand-700: #1f2937;
+  --color-brand-800: #111827;
+  --color-brand-900: #030712;
+
+  --color-accent-neon: #00f0ff;
+  --color-accent-blue: #0ea5e9;
+  --color-accent-pink: #ec4899;
+}
+
+@layer base {
+  body {
+    @apply bg-brand-900 text-brand-50 antialiased overflow-hidden;
+  }
+}
+
+@layer components {
+  .glass-panel {
+    @apply bg-brand-800/40 backdrop-blur-md border border-white/10 shadow-2xl rounded-2xl;
+  }
+  .neon-text {
+    text-shadow: 0 0 10px var(--color-accent-neon), 0 0 20px var(--color-accent-neon);
+  }
+}
+
+/* Custom Scrollbar for dark theme */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+::-webkit-scrollbar-track {
+  background: var(--color-brand-900); 
+}
+::-webkit-scrollbar-thumb {
+  background: var(--color-brand-600); 
+  border-radius: 10px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: var(--color-brand-500); 
+}
