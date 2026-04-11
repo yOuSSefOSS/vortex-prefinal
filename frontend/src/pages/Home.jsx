@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { useAppContext } from '../context/AppContext';
 import ShapeCard from '../components/ShapeCard';
 import ControlSlider from '../components/ControlSlider';
@@ -96,6 +96,67 @@ const calculateAerodynamics = (shapeId, isAirfoil, alpha) => {
   return { cl: 0, cd: 0 };
 };
 
+/** Per-NACA params for empirical autotune (when NeuralFoil is off). */
+const nacaParamsFromDigits = (m, p, t) => ({
+  alpha0: m < 1e-8 ? 0 : -2.5 - m * 55 * Math.max(0.15, p),
+  clAlpha: 0.1 + m * 0.95 + Math.max(0, 0.14 - t) * 0.35,
+  stallPos: 14 + m * 18 - Math.abs(t - 0.12) * 38 + Math.abs(p - 0.4) * 4,
+  stallNeg: -13 - m * 8,
+  clMax: 1.4 + m * 0.45,
+  cdMin: 0.0055 + t * 0.028,
+  k: 0.004 + m * 0.0015,
+});
+
+const calculateAerodynamicsWithParams = (params, alpha) => {
+  const { alpha0, clAlpha, stallPos, stallNeg, cdMin, k } = params;
+  let cl = clAlpha * (alpha - alpha0);
+  let cd = cdMin + k * cl * cl;
+  if (alpha > stallPos) {
+    const excess = alpha - stallPos;
+    const clAtStall = clAlpha * (stallPos - alpha0);
+    cl = Math.max(0.15, clAtStall - excess * 0.08);
+    cd = cdMin + k * clAtStall * clAtStall + 0.015 * Math.pow(excess, 1.6);
+  } else if (alpha < stallNeg) {
+    const excess = Math.abs(alpha - stallNeg);
+    const clAtStall = clAlpha * (stallNeg - alpha0);
+    cl = Math.min(-0.15, clAtStall + excess * 0.08);
+    cd = cdMin + k * clAtStall * clAtStall + 0.015 * Math.pow(excess, 1.6);
+  }
+  if (Math.abs(alpha) > 35) {
+    cd = Math.max(cd, 1.2 * Math.pow(Math.sin((alpha * Math.PI) / 180), 2));
+  }
+  return { cl: Number(cl.toFixed(4)), cd: Number(cd.toFixed(4)) };
+};
+
+/** Coarse NACA 4-digit grid (~147) — balances coverage vs UI responsiveness. */
+function* iterateNACA4DigitCandidates() {
+  const tList = [8, 10, 12, 14, 16, 18, 20];
+  for (const td of tList) {
+    const t = td / 100;
+    yield { m: 0, p: 0.4, t, label: `NACA 00${String(td).padStart(2, '0')}` };
+  }
+  const mDigits = [1, 3, 5, 7, 9];
+  const pDigits = [2, 4, 6, 8];
+  for (const md of mDigits) {
+    for (const pd of pDigits) {
+      for (const td of tList) {
+        yield {
+          m: md / 100,
+          p: pd / 10,
+          t: td / 100,
+          label: `NACA ${md}${pd}${String(td).padStart(2, '0')}`,
+        };
+      }
+    }
+  }
+}
+
+const buildAlphaList = (bounds) => {
+  const out = [];
+  for (let a = bounds.min; a <= bounds.max; a++) out.push(a);
+  return out;
+};
+
 // ─── Parse .dat airfoil ───────────────────────────────────────────────────────
 const parseAirfoilDat = (text) => {
   const points = [];
@@ -132,9 +193,17 @@ const Home = () => {
   
   // Custom Airfoils State via Context
   const {
-    useNeuralFoil, units, lowPowerMode, audioVolume, soundPreset, graphBounds,
-    customAirfoils, setCustomAirfoils,
-    setLastSimulationData, setActiveShapeIdGlobal
+    useNeuralFoil,
+    units,
+    audioVolume,
+    soundPreset,
+    graphBounds,
+    customAirfoils,
+    setCustomAirfoils,
+    setLastSimulationData,
+    setActiveShapeIdGlobal,
+    goldenLiftActive,
+    setGoldenLiftActive,
   } = useAppContext();
 
   const [showImportModal, setShowImportModal] = useState(false);
@@ -146,6 +215,15 @@ const Home = () => {
   const [importError,   setImportError]   = useState('');
   const [flowActive,    setFlowActive]    = useState(false);
   const fileInputRef = useRef(null);
+
+  const [autotunePhase, setAutotunePhase] = useState('idle');
+  const [autotuneProgress, setAutotuneProgress] = useState(null);
+  const [autotunePreview, setAutotunePreview] = useState(null);
+  const [autotuneResult, setAutotuneResult] = useState(null);
+  const autotuneAbortRef = useRef(false);
+  const autotuneAbortControllerRef = useRef(null);
+  const autotuneLockRef = useRef(false);
+  const suppressGoldenClear = useRef(false);
 
   const ALL_SHAPES = [...SHAPES, ...customAirfoils];
   const activeShape = ALL_SHAPES.find(s=>s.id===activeShapeId);
@@ -331,13 +409,175 @@ const Home = () => {
     setFlowActive(false);
   };
 
+  useEffect(() => {
+    if (suppressGoldenClear.current) return;
+    setGoldenLiftActive(false);
+  }, [pitchAngle, activeShapeId, setGoldenLiftActive]);
+
+  const fetchNeuralPolar = async (points, alphaList, re, signal) => {
+    const res = await fetch('http://localhost:5000/api/analyze', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ alpha: alphaList, Re: re, mach: 0, points }),
+      signal,
+    });
+    const data = await res.json();
+    if (data.error) throw new Error(data.error);
+    if (!Array.isArray(data)) throw new Error('Invalid polar');
+    return data;
+  };
+
+  const runAutotune = useCallback(async () => {
+    if (autotuneLockRef.current || !hasTarget) return;
+    autotuneLockRef.current = true;
+    setFlowActive(false);
+    setAutotunePhase('running');
+    setAutotuneResult(null);
+    setGoldenLiftActive(false);
+    autotuneAbortRef.current = false;
+    autotuneAbortControllerRef.current?.abort();
+    const controller = new AbortController();
+    autotuneAbortControllerRef.current = controller;
+
+    const candidates = [...iterateNACA4DigitCandidates()];
+    const total = candidates.length;
+    const alphaList = buildAlphaList(graphBounds);
+    const reynolds = (windSpeed * density) / 1.5e-5;
+
+    let bestCl = -Infinity;
+    let bestAoa = graphBounds.min;
+    let bestLabel = '';
+    let bestPoints = null;
+
+    try {
+      for (let i = 0; i < candidates.length; i++) {
+        if (autotuneAbortRef.current) break;
+        const c = candidates[i];
+        const points = computeNACA(c.m, c.p, c.t);
+        setAutotunePreview({ airfoilData: points, name: c.label, pitchAngle: graphBounds.min });
+        setAutotuneProgress({
+          index: i + 1,
+          total,
+          message: `Testing ${c.label} at sweep ${graphBounds.min}°…${graphBounds.max}° (${i + 1} / ${total})`,
+        });
+
+        let polar;
+        if (useNeuralFoil) {
+          try {
+            polar = await fetchNeuralPolar(points, alphaList, reynolds, controller.signal);
+          } catch {
+            const params = nacaParamsFromDigits(c.m, c.p, c.t);
+            polar = alphaList.map((aoa) => ({
+              aoa,
+              ...calculateAerodynamicsWithParams(params, aoa),
+            }));
+          }
+        } else {
+          const params = nacaParamsFromDigits(c.m, c.p, c.t);
+          polar = alphaList.map((aoa) => ({
+            aoa,
+            ...calculateAerodynamicsWithParams(params, aoa),
+          }));
+        }
+
+        for (const row of polar) {
+          const aoa = row.aoa;
+          const cl = Number(row.cl);
+          if (aoa >= graphBounds.min && aoa <= graphBounds.max && cl > bestCl) {
+            bestCl = cl;
+            bestAoa = aoa;
+            bestLabel = c.label;
+            bestPoints = points;
+          }
+        }
+
+        const rowBest = polar.reduce((a, b) => (Number(b.cl) > Number(a.cl) ? b : a), polar[0]);
+        setAutotunePreview({
+          airfoilData: points,
+          name: c.label,
+          pitchAngle: rowBest.aoa,
+        });
+
+        await new Promise((r) => setTimeout(r, 0));
+      }
+
+      if (autotuneAbortRef.current) {
+        setAutotunePhase('idle');
+        setAutotunePreview(null);
+        setAutotuneProgress(null);
+        return;
+      }
+
+      if (!bestPoints || bestCl === -Infinity) {
+        setAutotunePhase('idle');
+        setAutotunePreview(null);
+        setAutotuneProgress(null);
+        return;
+      }
+
+      const id = `golden-autotune-${Date.now()}`;
+      const roundedAoA = Math.round(bestAoa);
+      const shape = {
+        id,
+        name: `★ GOLDEN · ${bestLabel}`,
+        type: 'Airfoil · Autotune',
+        icon: 'sparkles',
+        airfoilData: bestPoints,
+      };
+      suppressGoldenClear.current = true;
+      setCustomAirfoils((prev) => [...prev.filter((s) => !String(s.id).startsWith('golden-autotune-')), shape]);
+      setActiveShapeId(id);
+      setActiveShapeIdGlobal(id);
+      setPitchAngle(roundedAoA);
+      setAutotunePreview(null);
+      setAutotuneProgress(null);
+      setAutotuneResult({ label: bestLabel, cl: bestCl, aoa: roundedAoA });
+      setAutotunePhase('success');
+      setGoldenLiftActive(true);
+      requestAnimationFrame(() => {
+        requestAnimationFrame(() => {
+          suppressGoldenClear.current = false;
+        });
+      });
+      window.setTimeout(() => {
+        setAutotunePhase('idle');
+        setAutotuneResult(null);
+      }, 3200);
+    } catch (e) {
+      if (e.name !== 'AbortError') console.warn('Autotune:', e);
+      setAutotunePhase('idle');
+      setAutotunePreview(null);
+      setAutotuneProgress(null);
+    } finally {
+      autotuneAbortControllerRef.current = null;
+      autotuneLockRef.current = false;
+    }
+  }, [
+    hasTarget,
+    graphBounds,
+    windSpeed,
+    density,
+    useNeuralFoil,
+    setCustomAirfoils,
+    setActiveShapeIdGlobal,
+    setGoldenLiftActive,
+  ]);
+
+  const handleAutotuneCancel = useCallback(() => {
+    autotuneAbortRef.current = true;
+    autotuneAbortControllerRef.current?.abort();
+    setAutotunePhase('idle');
+    setAutotunePreview(null);
+    setAutotuneProgress(null);
+    autotuneLockRef.current = false;
+  }, []);
+
   // Chart and Aerodynamic Calculations utilizing NeuralFoil backend API or Empirical Math
   useEffect(()=>{
     if (!hasTarget || !activeShape) return;
     let isMounted = true;
     setIsSimulating(true);
 
-    const useNeuralFoil = localStorage.getItem('useNeuralFoil') !== 'false';
     const isCustomAirfoil = !['naca4412', 'naca0012'].includes(activeShapeId);
 
     if (!useNeuralFoil) {
@@ -393,7 +633,7 @@ const Home = () => {
     });
 
     return ()=> { isMounted = false; };
-  }, [activeShapeId, windSpeed, density]); // Trigger dynamically
+  }, [activeShapeId, windSpeed, density, useNeuralFoil, graphBounds, hasTarget]); // Trigger dynamically
 
 
   return (
@@ -435,8 +675,14 @@ const Home = () => {
             pitchAngle={pitchAngle}
             windSpeed={windSpeed}
             flowActive={flowActive}
-            lowPowerMode={lowPowerMode}
             onFlowToggle={()=>setFlowActive(p=>!p)}
+            autotunePhase={autotunePhase}
+            autotuneProgress={autotuneProgress}
+            onAutotune={runAutotune}
+            onAutotuneCancel={handleAutotuneCancel}
+            autotunePreview={autotunePreview}
+            autotuneResult={autotuneResult}
+            goldenLiftActive={goldenLiftActive}
           />
         </div>
 
@@ -459,8 +705,23 @@ const Home = () => {
           </div>
 
           {/* Live metrics */}
-          <div className="mt-6 border-t border-white/10 pt-5 flex-shrink-0">
-            <h2 className="text-sm font-mono tracking-widest text-[var(--color-accent-pink)] uppercase mb-4">Live Metrics</h2>
+          <div
+            className={`mt-6 border-t border-white/10 pt-5 flex-shrink-0 rounded-xl transition-[box-shadow,border-color] duration-500 ${
+              goldenLiftActive
+                ? 'shadow-[0_0_32px_rgba(234,179,8,0.22),inset_0_0_24px_rgba(234,179,8,0.06)] border border-amber-500/35 p-4 -m-1 bg-amber-500/[0.04]'
+                : ''
+            }`}
+          >
+            <h2
+              className={`text-sm font-mono tracking-widest uppercase mb-4 ${
+                goldenLiftActive ? 'text-amber-200/90' : 'text-[var(--color-accent-pink)]'
+              }`}
+            >
+              Live Metrics
+              {goldenLiftActive && (
+                <span className="ml-2 text-[10px] font-normal text-amber-400/90 tracking-normal">· Golden optimum</span>
+              )}
+            </h2>
             <div className="grid grid-cols-2 gap-3">
               <div className="bg-brand-900/50 p-3 rounded-lg border border-white/5 flex flex-col justify-center">
                 <div className="flex justify-between items-end mb-1">

@@ -1,10 +1,11 @@
 import React from 'react';
-import { Box, Wind, Layers } from 'lucide-react';
+import { Box, Wind, Layers, Sparkles } from 'lucide-react';
 
 const ICON_MAP = {
   box: <Box size={18} />,
   wind: <Wind size={18} />,
-  layers: <Layers size={18} />
+  layers: <Layers size={18} />,
+  sparkles: <Sparkles size={18} className="text-amber-300" />,
 };
 
 const ShapeCard = ({ id, name, type, icon, active, onClick }) => {

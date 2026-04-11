@@ -1,11 +1,12 @@
 import React from 'react';
-import { useAppContext } from '../context/AppContext';
+import { useAppContext, FLOW_VISUAL_OPTIONS } from '../context/AppContext';
 
 const Settings = () => {
   const { 
     useNeuralFoil, setUseNeuralFoil,
     units, setUnits,
     lowPowerMode, setLowPowerMode,
+    flowVisualMode, setFlowVisualMode,
     audioVolume, setAudioVolume,
     soundPreset, setSoundPreset,
     graphBounds, setGraphBounds
@@ -44,10 +45,35 @@ const Settings = () => {
                   Low Power Mode (Eco)
                   {lowPowerMode && <span className="text-[10px] bg-green-500/20 text-green-400 px-2 py-0.5 rounded-full border border-green-500/50">ACTIVE</span>}
                 </h3>
-                <p className="text-sm text-brand-300">Reduces 3D particle count by 50% to save GPU/Battery power.</p>
+                <p className="text-sm text-brand-300">Reduces 3D flow particle count by half (and tightens streakline seeds) to save GPU and battery.</p>
              </div>
              <div className={`w-12 h-6 flex-shrink-0 rounded-full relative shadow-[0_0_10px_var(--color-accent-neon)] transition-colors ${lowPowerMode ? 'bg-green-500 shadow-[0_0_10px_#22c55e]' : 'bg-gray-600 shadow-none'}`}>
                 <div className={`w-4 h-4 bg-white rounded-full absolute top-1 shadow-md transition-all ${lowPowerMode ? 'right-1' : 'left-1'}`}></div>
+             </div>
+          </div>
+
+          {/* Flow / streamline look (3D viewport) */}
+          <div className="bg-brand-800/50 p-6 rounded-xl border border-white/5 flex flex-col gap-4">
+             <div>
+                <h3 className="text-white font-semibold">Flow visualization</h3>
+                <p className="text-sm text-brand-300">How wind particles and streaklines appear in the dashboard 3D view (Start Flow).</p>
+             </div>
+             <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                {FLOW_VISUAL_OPTIONS.map((opt) => (
+                   <button
+                      key={opt.id}
+                      type="button"
+                      onClick={() => setFlowVisualMode(opt.id)}
+                      className={`text-left py-3 px-4 rounded-lg border transition-all ${
+                        flowVisualMode === opt.id
+                          ? 'bg-[var(--color-accent-blue)]/15 border-[var(--color-accent-blue)] text-white shadow-[0_0_12px_rgba(14,165,233,0.25)]'
+                          : 'bg-black/20 border-white/10 text-brand-400 hover:border-white/25 hover:text-brand-200'
+                      }`}
+                   >
+                      <div className="text-xs font-mono uppercase tracking-wider text-[var(--color-accent-blue)] mb-1">{opt.label}</div>
+                      <div className="text-[11px] leading-snug text-brand-300">{opt.description}</div>
+                   </button>
+                ))}
              </div>
           </div>
 
