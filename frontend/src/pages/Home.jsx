@@ -5,6 +5,7 @@ import ControlSlider from '../components/ControlSlider';
 import SimulationView from '../components/SimulationView';
 import DataChart from '../components/DataChart';
 import PolarChart from '../components/PolarChart';
+import AeroFactsPanel from '../components/AeroFactsPanel';
 import { Box, Circle, Upload, Mountain, Globe, Wind, Layers } from 'lucide-react';
 
 // ─── Generic NACA 4-digit coordinate generator ───────────────────────────────
@@ -214,6 +215,7 @@ const Home = () => {
   const [density,       setDensity]       = useState(1.225);
   const [importError,   setImportError]   = useState('');
   const [flowActive,    setFlowActive]    = useState(false);
+  const [aeroFactsActive, setAeroFactsActive] = useState(false);
   const fileInputRef = useRef(null);
 
   const [autotunePhase, setAutotunePhase] = useState('idle');
@@ -668,7 +670,7 @@ const Home = () => {
         </div>
 
         {/* ── Center: Viewport ── */}
-        <div className="col-span-1 lg:col-span-2">
+        <div className="col-span-1 lg:col-span-2 relative">
           <SimulationView
             isSimulating={isSimulating}
             activeShape={activeShape}
@@ -683,7 +685,22 @@ const Home = () => {
             autotunePreview={autotunePreview}
             autotuneResult={autotuneResult}
             goldenLiftActive={goldenLiftActive}
+            aeroFactsActive={aeroFactsActive}
+            onAeroFactsToggle={() => setAeroFactsActive(p => !p)}
+            liftForce={currentForce.lift}
+            dragForce={currentForce.drag}
+            isStalling={isStalling}
           />
+
+          {/* Aero-Facts Learn Mode Panel */}
+          {aeroFactsActive && (
+            <AeroFactsPanel
+              pitchAngle={pitchAngle}
+              windSpeed={windSpeed}
+              isStalling={isStalling}
+              onClose={() => setAeroFactsActive(false)}
+            />
+          )}
         </div>
 
         {/* ── Right: Controls ── */}

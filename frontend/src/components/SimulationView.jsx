@@ -6,7 +6,7 @@ import { Sparkles } from 'lucide-react';
 import { useAppContext } from '../context/AppContext';
 
 // ─── Viewport Gizmo ───────────────────────────────────────────────────────────
-const ViewportGizmo = ({ cameraStr, onSnapView }) => {
+const ViewportGizmo = React.memo(({ cameraStr, onSnapView }) => {
   const size = 90, cx = 45, armLen = 30;
   const azimR = (parseFloat(cameraStr.azim) * Math.PI) / 180;
   const elevR = (parseFloat(cameraStr.elev) * Math.PI) / 180;
@@ -47,10 +47,10 @@ const ViewportGizmo = ({ cameraStr, onSnapView }) => {
       <div style={{fontSize:9,fontFamily:'monospace',color:'rgba(255,255,255,0.3)',pointerEvents:'none'}}>NUMPAD · CLICK AXIS</div>
     </div>
   );
-};
+});
 
 // ─── AoA Gauge ────────────────────────────────────────────────────────────────
-const AoAGauge = ({ pitchAngle }) => {
+const AoAGauge = React.memo(({ pitchAngle }) => {
   const abs=Math.abs(pitchAngle), isStall=abs>14, isWarn=abs>10;
   const clamp=Math.max(-45,Math.min(45,pitchAngle));
   const nr=((clamp*2-90)*Math.PI)/180;
@@ -71,7 +71,7 @@ const AoAGauge = ({ pitchAngle }) => {
       </svg>
     </div>
   );
-};
+});
 
 // ─── Surface helper (for heatmap Cp estimation) ──────────────────────────────
 const buildSurfaceFn = (pts) => (x) => {
@@ -505,38 +505,49 @@ const AirfoilMesh = ({ points, showHeatmap, isSimulating, pitchAngle }) => {
     
     const pos = geometry.attributes.position.array;
     const col = geometry.attributes.color.array;
+    const vertCount = pos.length / 3;
     
-    // Bounding box for normalized chord
+    // Bounding box for normalized chord — computed once per frame
     let minX = Infinity, maxX = -Infinity;
-    for (let i = 0; i < pos.length / 3; i++) {
+    for (let i = 0; i < vertCount; i++) {
        const px = pos[i * 3];
        if (px < minX) minX = px;
        if (px > maxX) maxX = px;
     }
-    const chordLen = (maxX - minX) || 1;
+    const invChordLen = 1 / ((maxX - minX) || 1);
     const alpha = pitchAngle;
     const pRad = alpha * Math.PI / 180;
+
+    // ── Hoisted invariants (saves thousands of recalculations) ──
+    const sinPRad = Math.sin(pRad);
+    const sinPRad_2_2 = sinPRad * 2.2;
+    const absA = Math.abs(alpha);
+    const isStallRegime = absA > 14;
+    const sepIntensity = isStallRegime ? Math.min(1.0, (absA - 14) / 5.0) : 0;
+    const oneMinusSepI = 1 - sepIntensity;
+    const sepTarget = 0.95 * sepIntensity;
+    const alphaPositive = alpha >= 0;
+    const stagXPos = Math.min(0.08, alpha * 0.004);
+    const stagXNeg = Math.min(0.08, -alpha * 0.004);
+    const stallUpperCheck = alphaPositive;  // upper separates at positive alpha
     
-    for (let i = 0; i < pos.length / 3; i++) {
+    for (let i = 0; i < vertCount; i++) {
        const px = pos[i * 3], py = pos[i * 3 + 1];
-       const xNorm = Math.max(0.001, Math.min(0.999, (px - minX) / chordLen));
+       const xNorm = Math.max(0.001, Math.min(0.999, (px - minX) * invChordLen));
        const isUpper = py > 0;
        
-       // Real CFD Thin Airfoil Approximation
-       // 1. Circulation (Lift) term
-       const gammaTerm = Math.sin(pRad) * Math.sqrt((1 - xNorm) / xNorm) * 2.2;
-       // 2. Thickness term (accelerates flow over middle)
+       // 1. Circulation (Lift) term — sin(pRad) hoisted
+       const gammaTerm = sinPRad_2_2 * Math.sqrt((1 - xNorm) / xNorm);
+       // 2. Thickness term
        const thicknessTerm = 1.0 + 0.24 * Math.sin(Math.PI * (1 - xNorm));
        
        let Vnorm = 0;
-       if (alpha >= 0) {
+       if (alphaPositive) {
            if (isUpper) {
               Vnorm = thicknessTerm + gammaTerm;
            } else {
-              // Stagnation point moves aft on lower surface
-              const stagX = Math.min(0.08, alpha * 0.004);
-              if (xNorm < stagX) {
-                 Vnorm = xNorm / stagX; // Drops to 0 at stagnation
+              if (xNorm < stagXPos) {
+                 Vnorm = xNorm / stagXPos;
               } else {
                  Vnorm = thicknessTerm - gammaTerm * 0.5;
               }
@@ -545,43 +556,35 @@ const AirfoilMesh = ({ points, showHeatmap, isSimulating, pitchAngle }) => {
            if (!isUpper) {
               Vnorm = thicknessTerm - gammaTerm;
            } else {
-              // Stagnation point moves aft on upper surface
-              const stagX = Math.min(0.08, -alpha * 0.004);
-              if (xNorm < stagX) {
-                 Vnorm = xNorm / stagX;
+              if (xNorm < stagXNeg) {
+                 Vnorm = xNorm / stagXNeg;
               } else {
                  Vnorm = thicknessTerm + gammaTerm * 0.5;
               }
            }
        }
        
-       // 3. Stall Separation
-       const absA = Math.abs(alpha);
-       if (absA > 14) {
-          if ((isUpper && alpha > 0) || (!isUpper && alpha < 0)) {
-             if (xNorm > 0.2) {
-                const sepIntensity = Math.min(1.0, (absA - 14) / 5.0);
-                // In separated wake, velocity recovers toward freestream (1.0), collapsing the suction peak
-                Vnorm = Vnorm * (1 - sepIntensity) + 0.95 * sepIntensity; 
-             }
+       // 3. Stall Separation — intensity pre-computed
+       if (isStallRegime) {
+          const surfMatch = isUpper ? stallUpperCheck : !stallUpperCheck;
+          if (surfMatch && xNorm > 0.2) {
+             Vnorm = Vnorm * oneMinusSepI + sepTarget;
           }
        }
        
-       // Smooth trailing edge singularity
+       // Smooth trailing edge
        if (xNorm > 0.95) Vnorm = Vnorm * 0.7 + 0.3;
        
-       // Coefficient of Pressure: Cp = 1 - (V/U)^2
+       // Cp = 1 - V²
        const cp = 1.0 - (Vnorm * Vnorm);
        
        let r, g, b;
        if (cp > 0) {
-          // Positive Cp (Stagnation): green/yellow -> red
           r = Math.min(1, cp * 1.2 + 0.2); 
           g = Math.max(0, 0.8 - cp);
           b = 0;
        } else {
-          // Negative Cp (Suction Peak): green -> cyan -> deep blue -> purple
-          const neg = Math.min(Math.abs(cp) / 4.0, 1);
+          const neg = Math.min(Math.abs(cp) * 0.25, 1);
           r = Math.max(0, neg - 0.7) * 3.0; 
           g = Math.max(0, 0.9 - neg * 1.5);
           b = Math.min(1, 0.4 + neg * 2.0);
@@ -828,13 +831,15 @@ const CameraTracker = ({ setCameraStr, cameraMode, setCameraMode, snapRef, turnt
 };
 
 // ─── Viewport Button ──────────────────────────────────────────────────────────
-const VBtn = ({label,active,disabled,onClick,color='#00f0ff'})=>(
-  <button onClick={onClick} disabled={disabled} style={{fontFamily:'monospace',fontSize:'10px',fontWeight:'bold',letterSpacing:'0.1em',padding:'5px 11px',borderRadius:5,cursor:disabled?'not-allowed':'pointer',border:`1px solid ${active?color:'rgba(255,255,255,0.15)'}`,background:active?`${color}22`:'rgba(0,0,0,0.5)',color:active?color:'rgba(255,255,255,0.5)',boxShadow:active?`0 0 10px ${color}44`:'none',transition:'all 0.2s',backdropFilter:'blur(6px)',opacity:disabled?0.35:1}}>
+const VBtn = React.memo(({label,active,disabled,onClick,color='#00f0ff'})=>(
+  <button onClick={onClick} disabled={disabled} style={{fontFamily:'monospace',fontSize:'10px',fontWeight:'bold',letterSpacing:'0.1em',padding:'5px 11px',borderRadius:6,cursor:disabled?'not-allowed':'pointer',border:`1px solid ${active?color:'rgba(255,255,255,0.12)'}`,background:active?`${color}18`:'rgba(0,0,0,0.55)',color:active?color:'rgba(255,255,255,0.45)',boxShadow:active?`0 0 14px ${color}33, inset 0 0 8px ${color}0a`:'none',transition:'transform 0.2s cubic-bezier(0.34,1.56,0.64,1), background 0.2s, color 0.2s, border-color 0.2s, box-shadow 0.3s',backdropFilter:'blur(6px)',opacity:disabled?0.35:1,willChange:'transform',transform:'translateZ(0)'}} onMouseEnter={e=>{if(!disabled)e.currentTarget.style.transform='translateY(-1px)'}} onMouseLeave={e=>{e.currentTarget.style.transform='translateY(0)'}} onMouseDown={e=>{if(!disabled)e.currentTarget.style.transform='scale(0.97)'}} onMouseUp={e=>{if(!disabled)e.currentTarget.style.transform='translateY(-1px)'}}>
     {label}
   </button>
-);
+));
 
-// ─── Main SimulationView ──────────────────────────────────────────────────────
+
+
+
 const SimulationView = ({
   isSimulating,
   activeShape,
@@ -850,6 +855,8 @@ const SimulationView = ({
   autotunePreview = null,
   autotuneResult = null,
   goldenLiftActive = false,
+  aeroFactsActive = false,
+  onAeroFactsToggle,
 }) => {
   const [cameraMode, setCameraMode] = useState('PERSPECTIVE');
   const [cameraStr, setCameraStr]   = useState({elev:'28.0',azim:'-55.0',mode:'PERSPECTIVE'});
@@ -866,7 +873,7 @@ const SimulationView = ({
   const autotuneBusy = autotunePhase === 'running';
 
   return (
-    <div className="relative w-full h-full min-h-[400px] glass-panel flex flex-col items-center justify-center overflow-hidden">
+    <div className="relative w-full h-full min-h-[400px] glass-panel flex flex-col items-center justify-center overflow-hidden" style={{willChange:'transform',transform:'translateZ(0)'}}>
       <div className="absolute inset-0 bg-[linear-gradient(to_right,#ffffff05_1px,transparent_1px),linear-gradient(to_bottom,#ffffff05_1px,transparent_1px)] bg-[size:2rem_2rem] opacity-50 z-0 pointer-events-none"/>
 
       {/* Top Left — Active target + AUTOTUNE */}
@@ -944,11 +951,22 @@ const SimulationView = ({
         </div>
       )}
 
+
+
+
       {/* Toolbar bottom-left */}
       <div style={{position:'absolute',bottom:16,left:16,zIndex:20,display:'flex',gap:6,flexWrap:'wrap'}}>
         <VBtn label={flowActive?'⏸ PAUSE FLOW':'▶ START FLOW'} active={flowActive} disabled={!hasShape} onClick={onFlowToggle} color="#00f0ff"/>
         <VBtn label="⬡ HEATMAP" active={showHeatmap} disabled={!hasShape} onClick={()=>setShowHeatmap(p=>!p)} color="#ff6600"/>
         <VBtn label="⟳ TURNTABLE" active={turntableActive} disabled={!hasShape} onClick={()=>setTurntable(p=>!p)} color="#a78bfa"/>
+        {onAeroFactsToggle && (
+          <button
+            onClick={onAeroFactsToggle}
+            className={`learn-mode-btn ${aeroFactsActive ? 'active' : 'inactive'}`}
+          >
+            {aeroFactsActive ? '💡 LEARN ON' : '💡 LEARN'}
+          </button>
+        )}
       </div>
 
       {/* 3D Canvas */}
