@@ -4,6 +4,7 @@ import ShapeCard from '../components/ShapeCard';
 import ControlSlider from '../components/ControlSlider';
 import SimulationView from '../components/SimulationView';
 import DataChart from '../components/DataChart';
+import PolarChart from '../components/PolarChart';
 import { Box, Circle, Upload, Mountain, Globe, Wind, Layers } from 'lucide-react';
 
 // ─── Generic NACA 4-digit coordinate generator ───────────────────────────────
@@ -172,11 +173,17 @@ const Home = () => {
   // Stall state — fires only when STRICTLY past the stall boundary, not at it
   const isStalling = React.useMemo(() => {
     if (positiveStallAngle === null) return false;
-    // Strictly greater than peak to avoid triggering at the exact peak AoA
     if (pitchAngle > positiveStallAngle) return true;
     if (negativeStallAngle !== null && pitchAngle < negativeStallAngle) return true;
     return false;
   }, [pitchAngle, positiveStallAngle, negativeStallAngle]);
+
+  // Stall point coordinates on the polar (Cd, Cl at stall AoA)
+  const stallPoint = React.useMemo(() => {
+    if (!positiveStallAngle || !chartData.length) return { cd: null, cl: null };
+    const pt = chartData.find(d => d.aoa === positiveStallAngle);
+    return pt ? { cd: pt.cd, cl: pt.cl } : { cd: null, cl: null };
+  }, [positiveStallAngle, chartData]);
 
   // Audio Alarm Effect on stall threshold crossover
   useEffect(() => {
@@ -492,8 +499,8 @@ const Home = () => {
         </div>
       </div>
 
-      {/* Bottom Charts */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 h-[250px] flex-shrink-0 relative">
+      {/* Bottom Charts — 3-column grid */}
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 h-[280px] flex-shrink-0 relative">
         {isSimulating && (
            <div className="absolute inset-0 z-10 flex items-center justify-center bg-black/40 backdrop-blur-sm rounded-xl">
              <div className="text-[var(--color-brand-100)] font-mono animate-pulse tracking-widest text-sm flex gap-3 items-center">
@@ -504,6 +511,14 @@ const Home = () => {
         )}
         <DataChart data={chartData} title="Drag Coefficient (Cd vs AoA)" dataKey="cd" xKey="aoa" activeX={pitchAngle} stallAngleX={positiveStallAngle} negativeStallAngleX={negativeStallAngle} isStalling={isStalling} strokeColor="var(--color-accent-pink)" />
         <DataChart data={chartData} title="Lift Coefficient (Cl vs AoA)" dataKey="cl" xKey="aoa" activeX={pitchAngle} stallAngleX={positiveStallAngle} negativeStallAngleX={negativeStallAngle} isStalling={isStalling} strokeColor="var(--color-accent-neon)" />
+        <PolarChart
+          data={chartData}
+          currentCd={currentAeroItem.cd}
+          currentCl={currentAeroItem.cl}
+          stallCd={stallPoint.cd}
+          stallCl={stallPoint.cl}
+          isStalling={isStalling}
+        />
       </div>
 
       {/* Import Modal */}
