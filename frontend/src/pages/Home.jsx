@@ -37,8 +37,8 @@ const NACA0012_POINTS = computeNACA(0, 0, 0.12);
 
 // ─── Environment presets ──────────────────────────────────────────────────────
 const ENV_PRESETS = {
-  standard: { label:'Standard Air', sublabel:'Sea Level', icon:<Globe size={13}/>, density:1.225, windSpeed:50,  particleCount:1000, color:'#00f0ff' },
-  highAlt:  { label:'High Altitude', sublabel:'~10 km',   icon:<Mountain size={13}/>, density:0.414, windSpeed:80, particleCount:500,  color:'#a78bfa' },
+  standard: { label:'Standard Air', sublabel:'Earth Sea Level', icon:<Globe size={13}/>, density:1.225, windSpeed:50,  particleCount:1000, color:'#00f0ff' },
+  highAlt:  { label:'High Altitude', sublabel:'Upper Troposphere', icon:<Mountain size={13}/>, density:0.414, windSpeed:80, particleCount:500,  color:'#a78bfa' },
 };
 
 // ─── Shapes library ───────────────────────────────────────────────────────────
@@ -130,14 +130,15 @@ const calculateAerodynamicsWithParams = (params, alpha) => {
 };
 
 /** Coarse NACA 4-digit grid (~147) — balances coverage vs UI responsiveness. */
-function* iterateNACA4DigitCandidates() {
-  const tList = [8, 10, 12, 14, 16, 18, 20];
+function* iterateNACA4DigitCandidates(mode = 'light') {
+  const isDeep = mode === 'heavy';
+  const tList = isDeep ? [8, 10, 12, 14, 16, 18, 20] : [10, 12, 15];
   for (const td of tList) {
     const t = td / 100;
-    yield { m: 0, p: 0.4, t, label: `NACA 00${String(td).padStart(2, '0')}` };
+    yield { m: 0, p: isDeep ? 0.4 : 4, t, label: `NACA 00${String(td).padStart(2, '0')}` };
   }
-  const mDigits = [1, 3, 5, 7, 9];
-  const pDigits = [2, 4, 6, 8];
+  const mDigits = isDeep ? [1, 3, 5, 7, 9] : [2, 4, 6];
+  const pDigits = isDeep ? [2, 4, 6, 8] : [3, 4, 5];
   for (const md of mDigits) {
     for (const pd of pDigits) {
       for (const td of tList) {
@@ -177,10 +178,26 @@ const parseAirfoilDat = (text) => {
 
 // ─── Preset Button ────────────────────────────────────────────────────────────
 const PresetButton = ({ preset, active, onClick }) => (
-  <button onClick={onClick} style={{flex:1,display:'flex',flexDirection:'column',alignItems:'center',gap:2,padding:'8px 6px',borderRadius:10,border:`1px solid ${active?preset.color:'rgba(255,255,255,0.08)'}`,background:active?`${preset.color}18`:'rgba(255,255,255,0.03)',cursor:'pointer',transition:'all 0.25s',boxShadow:active?`0 0 14px ${preset.color}33`:'none',color:active?preset.color:'rgba(255,255,255,0.45)',fontFamily:'monospace'}}>
-    <span style={{display:'flex',alignItems:'center',gap:4,fontSize:11,fontWeight:'bold',letterSpacing:'0.08em'}}>{preset.icon}{preset.label}</span>
-    <span style={{fontSize:9,opacity:0.6}}>{preset.sublabel}</span>
-    <span style={{fontSize:9,marginTop:2,opacity:active?0.85:0.4}}>ρ = {preset.density} kg/m³</span>
+  <button
+    onClick={onClick}
+    className={`${preset.shape} group transition-all duration-300 relative flex items-center justify-between p-4 w-full cursor-pointer overflow-hidden border-l-4`}
+    style={{
+      background: active ? `${preset.color}20` : 'rgba(255,255,255,0.03)',
+      borderLeftColor: preset.color,
+      borderTop: 'none', borderRight: 'none', borderBottom: 'none',
+      opacity: active ? 1 : 0.6,
+      height: '52px'
+    }}
+  >
+    <div className="flex flex-col items-start gap-0.5">
+      <span className="flex items-center gap-2 text-[10px] font-bold tracking-widest uppercase" style={{color: active ? preset.color : 'white'}}>
+        {preset.icon} {preset.label}
+      </span>
+      <span className="text-[9px] opacity-60 font-mono">{preset.sublabel}</span>
+    </div>
+    <div className="text-right">
+       <span className="text-[10px] font-mono opacity-80" style={{color: preset.color}}>ρ {preset.density}</span>
+    </div>
   </button>
 );
 
@@ -416,11 +433,11 @@ const Home = () => {
     setGoldenLiftActive(false);
   }, [pitchAngle, activeShapeId, setGoldenLiftActive]);
 
-  const fetchNeuralPolar = async (points, alphaList, re, signal) => {
+  const fetchNeuralPolar = async (points, alphaList, re, signal, modelSize = 'large') => {
     const res = await fetch('http://localhost:5000/api/analyze', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ alpha: alphaList, Re: re, mach: 0, points }),
+      body: JSON.stringify({ alpha: alphaList, Re: re, mach: 0, points, modelSize }),
       signal,
     });
     const data = await res.json();
@@ -429,7 +446,7 @@ const Home = () => {
     return data;
   };
 
-  const runAutotune = useCallback(async () => {
+  const runAutotune = useCallback(async (mode = 'light') => {
     if (autotuneLockRef.current || !hasTarget) return;
     autotuneLockRef.current = true;
     setFlowActive(false);
@@ -441,7 +458,7 @@ const Home = () => {
     const controller = new AbortController();
     autotuneAbortControllerRef.current = controller;
 
-    const candidates = [...iterateNACA4DigitCandidates()];
+    const candidates = [...iterateNACA4DigitCandidates(mode)];
     const total = candidates.length;
     const alphaList = buildAlphaList(graphBounds);
     const reynolds = (windSpeed * density) / 1.5e-5;
@@ -466,7 +483,8 @@ const Home = () => {
         let polar;
         if (useNeuralFoil) {
           try {
-            polar = await fetchNeuralPolar(points, alphaList, reynolds, controller.signal);
+            const nfModelSize = mode === 'heavy' ? 'xxxlarge' : 'large';
+            polar = await fetchNeuralPolar(points, alphaList, reynolds, controller.signal, nfModelSize);
           } catch {
             const params = nacaParamsFromDigits(c.m, c.p, c.t);
             polar = alphaList.map((aoa) => ({
@@ -612,7 +630,8 @@ const Home = () => {
         alpha: Array.from({length: graphBounds.max - graphBounds.min + 1}, (_, i) => i + graphBounds.min),
         Re: reynolds,
         mach: 0,
-        points: activeShape.airfoilData
+        points: activeShape.airfoilData,
+        modelSize: 'xlarge'
       })
     })
     .then(res => res.json())
@@ -705,11 +724,21 @@ const Home = () => {
 
         {/* ── Right: Controls ── */}
         <div className="col-span-1 glass-panel p-6 flex flex-col max-h-[600px]">
-          <h2 className="text-sm font-mono tracking-widest text-[var(--color-accent-blue)] uppercase mb-3 flex-shrink-0">Environment</h2>
-          <div className="flex gap-2 mb-5 flex-shrink-0">
+          <h2 className="text-sm font-mono tracking-widest text-[var(--color-accent-blue)] uppercase mb-4 flex-shrink-0">Atmosphere</h2>
+          <div className="flex flex-col gap-2 mb-6 flex-shrink-0">
             {Object.entries(ENV_PRESETS).map(([key,preset])=>(
               <PresetButton key={key} preset={preset} active={activePreset===key} onClick={()=>applyPreset(key)}/>
             ))}
+            
+            {/* The Circle Settings Button from Mockup */}
+            <button
+               className="aero-shape-circle self-center mt-2 flex flex-col gap-1 items-center justify-center text-white/50 hover:text-[var(--color-accent-blue)] transition-all cursor-pointer"
+               title="Global Physics Settings"
+            >
+              <div className="w-5 h-0.5 bg-current" />
+              <div className="w-5 h-0.5 bg-current" />
+              <div className="w-5 h-0.5 bg-current" />
+            </button>
           </div>
 
           <div className="border-t border-white/10 pt-4 mb-2 flex-shrink-0">

@@ -890,18 +890,6 @@ const SimulationView = ({
             <span className={`w-2 h-2 rounded-full shrink-0 ${isSimulating || autotuneBusy ? 'bg-[var(--color-accent-pink)] animate-pulse shadow-[0_0_10px_var(--color-accent-pink)]' : 'bg-transparent'}`}/>
           </div>
         </div>
-        {onAutotune && (
-          <button
-            type="button"
-            onClick={onAutotune}
-            disabled={!hasShape || autotuneBusy}
-            className="pointer-events-auto group relative flex items-center gap-2 px-3 py-2 rounded-lg font-mono text-[10px] font-bold uppercase tracking-[0.15em] transition-all disabled:opacity-35 disabled:cursor-not-allowed border-2 border-amber-400/50 bg-black/40 text-amber-100 hover:bg-amber-500/10 hover:border-amber-300/80 shadow-[0_0_18px_rgba(234,179,8,0.25)] animate-[pulse_3s_ease-in-out_infinite]"
-            style={{ animationDuration: autotuneBusy ? '0.8s' : '3s' }}
-          >
-            <Sparkles size={15} className="text-amber-300 group-hover:scale-110 transition-transform" />
-            Autotune
-          </button>
-        )}
       </div>
 
       <ViewportGizmo cameraStr={cameraStr} onSnapView={handleSnap}/>
@@ -954,11 +942,36 @@ const SimulationView = ({
 
 
 
+
       {/* Toolbar bottom-left */}
       <div style={{position:'absolute',bottom:16,left:16,zIndex:20,display:'flex',gap:6,flexWrap:'wrap'}}>
         <VBtn label={flowActive?'⏸ PAUSE FLOW':'▶ START FLOW'} active={flowActive} disabled={!hasShape} onClick={onFlowToggle} color="#00f0ff"/>
         <VBtn label="⬡ HEATMAP" active={showHeatmap} disabled={!hasShape} onClick={()=>setShowHeatmap(p=>!p)} color="#ff6600"/>
         <VBtn label="⟳ TURNTABLE" active={turntableActive} disabled={!hasShape} onClick={()=>setTurntable(p=>!p)} color="#a78bfa"/>
+        {onAutotune && (
+          <div className="flex gap-2 relative">
+            <button
+              type="button"
+              onClick={() => onAutotune('light')}
+              disabled={!hasShape || autotuneBusy}
+              className="pointer-events-auto group relative flex items-center gap-1.5 px-3 py-1.5 rounded-md font-mono text-[10px] font-bold uppercase tracking-[0.1em] transition-all disabled:opacity-35 disabled:cursor-not-allowed border border-amber-400/50 bg-amber-500/10 text-amber-100 hover:bg-amber-500/20 hover:border-amber-300/80 shadow-[0_0_12px_rgba(234,179,8,0.15)] backdrop-blur-sm"
+              title="Quickly test ~30 basic airfoils"
+            >
+              <Sparkles size={13} className="text-amber-300 group-hover:scale-110 transition-transform" />
+              FAST TUNE
+            </button>
+            <button
+              type="button"
+              onClick={() => onAutotune('heavy')}
+              disabled={!hasShape || autotuneBusy}
+              className="pointer-events-auto group relative flex items-center gap-1.5 px-3 py-1.5 rounded-md font-mono text-[10px] font-bold uppercase tracking-[0.1em] transition-all disabled:opacity-35 disabled:cursor-not-allowed border border-amber-400/50 bg-amber-500/10 text-amber-100 hover:bg-amber-500/20 hover:border-amber-300/80 shadow-[0_0_12px_rgba(234,179,8,0.15)] backdrop-blur-sm"
+              title="Deep search of over 140 NACA permutations"
+            >
+              <Sparkles size={13} className="text-amber-300 group-hover:scale-110 transition-transform" />
+              DEEP SCAN
+            </button>
+          </div>
+        )}
         {onAeroFactsToggle && (
           <button
             onClick={onAeroFactsToggle}
