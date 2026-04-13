@@ -6,7 +6,7 @@ import SimulationView from '../components/SimulationView';
 import DataChart from '../components/DataChart';
 import PolarChart from '../components/PolarChart';
 import AeroFactsPanel from '../components/AeroFactsPanel';
-import { Box, Circle, Upload, Mountain, Globe, Wind, Layers } from 'lucide-react';
+import { Box, Circle, Upload, Mountain, Globe, Wind, Layers, Settings, X, Activity } from 'lucide-react';
 
 // ─── Generic NACA 4-digit coordinate generator ───────────────────────────────
 const computeNACA = (m, p, t, N = 60) => {
@@ -180,26 +180,91 @@ const parseAirfoilDat = (text) => {
 const PresetButton = ({ preset, active, onClick }) => (
   <button
     onClick={onClick}
-    className={`${preset.shape} group transition-all duration-300 relative flex items-center justify-between p-4 w-full cursor-pointer overflow-hidden border-l-4`}
-    style={{
-      background: active ? `${preset.color}20` : 'rgba(255,255,255,0.03)',
-      borderLeftColor: preset.color,
-      borderTop: 'none', borderRight: 'none', borderBottom: 'none',
-      opacity: active ? 1 : 0.6,
-      height: '52px'
-    }}
+    className={`atmosphere-btn group ${active ? 'active' : ''}`}
+    style={{ '--btn-accent': preset.color }}
   >
-    <div className="flex flex-col items-start gap-0.5">
-      <span className="flex items-center gap-2 text-[10px] font-bold tracking-widest uppercase" style={{color: active ? preset.color : 'white'}}>
-        {preset.icon} {preset.label}
-      </span>
-      <span className="text-[9px] opacity-60 font-mono">{preset.sublabel}</span>
-    </div>
-    <div className="text-right">
-       <span className="text-[10px] font-mono opacity-80" style={{color: preset.color}}>ρ {preset.density}</span>
+    <div className="relative z-10 flex flex-col items-center gap-1.5 text-center w-full">
+      <div 
+        className={`w-9 h-9 rounded-xl flex items-center justify-center transition-all duration-500 ${active ? 'scale-110 shadow-lg' : 'opacity-60 group-hover:opacity-100 group-hover:scale-105'}`}
+        style={{ 
+          background: active ? `${preset.color}30` : `${preset.color}10`, 
+          color: preset.color, 
+          border: `1px solid ${preset.color}${active ? '60' : '20'}` 
+        }}
+      >
+        {React.cloneElement(preset.icon, { size: 18 })}
+      </div>
+      <div className="flex flex-col items-center">
+        <span className={`text-[10px] font-bold tracking-wider uppercase transition-colors ${active ? 'text-white' : 'text-brand-400'}`}>
+          {preset.label}
+        </span>
+        <span className="text-[8px] opacity-40 font-mono tracking-normal">{preset.sublabel}</span>
+      </div>
+      
+      {/* Tooltip-style density indicator */}
+      <div className="mt-1 px-2 py-0.5 rounded-full bg-black/40 border border-white/5">
+         <span className="text-[8px] font-mono opacity-80" style={{color: preset.color}}>ρ {preset.density}</span>
+      </div>
     </div>
   </button>
 );
+
+// ─── Settings Modal ──────────────────────────────────────────────────────────
+const SettingsModal = ({ show, onClose, manualDensity, setManualDensity, density, setDensity }) => {
+  if (!show) return null;
+  return (
+    <div className="settings-overlay" onClick={onClose}>
+      <div className="settings-modal" onClick={e => e.stopPropagation()}>
+        <button className="settings-close-btn" onClick={onClose}>
+          <X size={20} />
+        </button>
+        
+        <h2 className="text-xl font-mono tracking-widest text-[var(--color-accent-blue)] uppercase mb-6 flex items-center gap-3">
+          <Settings className="gear-rotate" /> Global Physics
+        </h2>
+
+        <div className="space-y-8">
+          {/* Manual Density Overdrive */}
+          <div className="p-4 rounded-2xl bg-white/5 border border-white/10">
+            <div className="flex items-center justify-between mb-4">
+              <div className="flex flex-col">
+                <span className="text-xs font-bold text-white tracking-wide uppercase">Manual Density Overdrive</span>
+                <span className="text-[10px] text-brand-400 font-mono">Override atmospheric presets</span>
+              </div>
+              <button 
+                onClick={() => setManualDensity(!manualDensity)}
+                className={`w-12 h-6 rounded-full transition-all relative ${manualDensity ? 'bg-[var(--color-accent-blue)]' : 'bg-brand-600'}`}
+              >
+                <div className={`absolute top-1 w-4 h-4 rounded-full bg-white transition-all ${manualDensity ? 'left-7' : 'left-1'}`} />
+              </button>
+            </div>
+
+            <div className={`transition-all duration-500 ${manualDensity ? 'opacity-100' : 'opacity-30 pointer-events-none'}`}>
+              <ControlSlider 
+                label="Air Density (ρ)" 
+                value={density} 
+                min={0.01} 
+                max={3.0} 
+                step={0.001}
+                unit="kg/m³" 
+                onChange={setDensity} 
+                accent="blue"
+              />
+              <div className="flex justify-between mt-2 px-1">
+                <span className="text-[9px] text-brand-500 font-mono">VACUUM (0.01)</span>
+                <span className="text-[9px] text-brand-500 font-mono">DEEP SEA (3.0)</span>
+              </div>
+            </div>
+          </div>
+
+          <div className="text-[10px] text-brand-500 font-mono italic text-center px-4">
+            "Density directly impacts Reynolds number and Dynamic Pressure. High density increases lift but drastically raises drag."
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+};
 
 // ─── Home ─────────────────────────────────────────────────────────────────────
 const Home = () => {
@@ -230,6 +295,8 @@ const Home = () => {
 
   const [activePreset,  setActivePreset]  = useState('standard');
   const [density,       setDensity]       = useState(1.225);
+  const [manualDensity, setManualDensity] = useState(false);
+  const [showSettings,  setShowSettings]  = useState(false);
   const [importError,   setImportError]   = useState('');
   const [flowActive,    setFlowActive]    = useState(false);
   const [aeroFactsActive, setAeroFactsActive] = useState(false);
@@ -381,6 +448,7 @@ const Home = () => {
   };
 
   const applyPreset = (key) => {
+    if (manualDensity) setManualDensity(false);
     const p=ENV_PRESETS[key];
     setActivePreset(key); setDensity(p.density);
     setWindSpeed(p.windSpeed);
@@ -723,32 +791,57 @@ const Home = () => {
         </div>
 
         {/* ── Right: Controls ── */}
-        <div className="col-span-1 glass-panel p-6 flex flex-col max-h-[600px]">
-          <h2 className="text-sm font-mono tracking-widest text-[var(--color-accent-blue)] uppercase mb-4 flex-shrink-0">Atmosphere</h2>
-          <div className="flex flex-col gap-2 mb-6 flex-shrink-0">
-            {Object.entries(ENV_PRESETS).map(([key,preset])=>(
-              <PresetButton key={key} preset={preset} active={activePreset===key} onClick={()=>applyPreset(key)}/>
-            ))}
+        <div className="col-span-1 glass-panel p-6 flex flex-col gap-0 overflow-hidden">
+          {/* Atmosphere Section */}
+          <div className="flex-shrink-0">
+            <div className="flex items-center justify-between mb-4">
+              <h2 className="text-sm font-mono tracking-widest text-[var(--color-accent-blue)] uppercase">Atmosphere</h2>
+              <button 
+                onClick={() => setShowSettings(true)}
+                className="gear-rotate p-1.5 rounded-lg bg-white/5 border border-white/10 text-white/40 hover:text-[var(--color-accent-blue)] hover:border-[var(--color-accent-blue)]/30 transition-all"
+                title="Global Physics Settings"
+              >
+                <Settings size={14} />
+              </button>
+            </div>
             
-            {/* The Circle Settings Button from Mockup */}
-            <button
-               className="aero-shape-circle self-center mt-2 flex flex-col gap-1 items-center justify-center text-white/50 hover:text-[var(--color-accent-blue)] transition-all cursor-pointer"
-               title="Global Physics Settings"
-            >
-              <div className="w-5 h-0.5 bg-current" />
-              <div className="w-5 h-0.5 bg-current" />
-              <div className="w-5 h-0.5 bg-current" />
-            </button>
+            <div className="atmosphere-grid mb-8">
+              {Object.entries(ENV_PRESETS).map(([key, preset]) => (
+                <PresetButton 
+                  key={key} 
+                  preset={preset} 
+                  active={activePreset === key} 
+                  onClick={() => applyPreset(key)} 
+                />
+              ))}
+            </div>
           </div>
 
-          <div className="border-t border-white/10 pt-4 mb-2 flex-shrink-0">
-            <h2 className="text-sm font-mono tracking-widest text-[var(--color-accent-blue)] uppercase mb-4">Parameters</h2>
+          {/* Parameters Section (Always Shown/Fixed) */}
+          <div className="flex-shrink-0 border-t border-white/10 pt-6 mb-6">
+            <h2 className="text-sm font-mono tracking-widest text-[var(--color-accent-blue)] uppercase mb-5">Parameters</h2>
+            <div className="flex flex-col gap-4">
+              <ControlSlider 
+                label="Wind Speed"    
+                value={windSpeed}     
+                min={0}   
+                max={300}   
+                unit={units === 'imperial' ? 'mph' : 'm/s'} 
+                onChange={setWindSpeed}     
+                accent="neon"
+              />
+              <ControlSlider 
+                label="Pitch Angle"   
+                value={pitchAngle}    
+                min={-45} 
+                max={45}    
+                unit="°"   
+                onChange={setPitchAngle}    
+                accent="blue"
+              />
+            </div>
           </div>
 
-          <div className="flex-1 overflow-y-auto pr-2 custom-scrollbar">
-            <ControlSlider label="Wind Speed"    value={windSpeed}     min={0}   max={300}   unit={units === 'imperial' ? 'mph' : 'm/s'} onChange={setWindSpeed}     accent="neon"/>
-            <ControlSlider label="Pitch Angle"   value={pitchAngle}    min={-45} max={45}    unit="°"   onChange={setPitchAngle}    accent="blue"/>
-          </div>
 
           {/* Live metrics */}
           <div
@@ -786,9 +879,12 @@ const Home = () => {
               <div className="bg-brand-900/50 p-3 rounded-lg border border-white/5 col-span-2">
                 <div className="flex items-center justify-between">
                   <div>
-                    <div className="text-xs text-brand-400 mb-1">AIR DENSITY</div>
-                    <div className="text-sm font-bold font-mono" style={{color:ENV_PRESETS[activePreset].color}}>
-                       ρ = {density} <span className="text-[10px]">kg/m³</span>
+                    <div className="text-xs text-brand-400 mb-1 flex items-center gap-1.5">
+                      AIR DENSITY {manualDensity && <Activity size={10} className="text-[var(--color-accent-blue)] animate-pulse" />}
+                    </div>
+                    <div className="text-sm font-bold font-mono" style={{color: manualDensity ? 'var(--color-accent-blue)' : ENV_PRESETS[activePreset].color}}>
+                       ρ = {density.toFixed(3)} <span className="text-[10px]">kg/m³</span>
+                       {manualDensity && <span className="ml-2 text-[8px] tracking-widest text-white/30 uppercase font-bold bg-white/5 px-1.5 py-0.5 rounded">Manual Overdrive</span>}
                        {units === 'imperial' && <span className="text-[10px] text-brand-500 ml-2">({(density * 0.00194032).toFixed(4)} slug/ft³)</span>}
                     </div>
                   </div>
@@ -864,6 +960,15 @@ const Home = () => {
         </div>
       )}
 
+      {/* Settings Modal Overlay */}
+      <SettingsModal 
+        show={showSettings} 
+        onClose={() => setShowSettings(false)}
+        manualDensity={manualDensity}
+        setManualDensity={setManualDensity}
+        density={density}
+        setDensity={setDensity}
+      />
     </div>
   );
 };
