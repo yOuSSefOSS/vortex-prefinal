@@ -12,7 +12,16 @@ app.use(express.json());
 // ─── START PYTHON DAEMON ──────────────────────────────────────────────────
 // We start Python ONCE. It loads Neuralfoil into memory and stays awake.
 // This is 100x faster than spawning Python for every single click.
-const pythonCmd = process.platform === 'win32' ? 'python' : 'python3';
+// Priority: Check for local virtual environment first (fixes Arch/Garuda setup)
+const fs = require('fs');
+const path = require('path');
+
+const venvPython = process.platform === 'win32' 
+  ? path.join(__dirname, 'venv', 'Scripts', 'python.exe')
+  : path.join(__dirname, 'venv', 'bin', 'python');
+
+const pythonCmd = fs.existsSync(venvPython) ? venvPython : (process.platform === 'win32' ? 'python' : 'python3');
+
 const pythonProcess = spawn(pythonCmd, ['run_nf.py', '--daemon']);
 
 // We queue requests because they are processed sequentially by the Python pipe.

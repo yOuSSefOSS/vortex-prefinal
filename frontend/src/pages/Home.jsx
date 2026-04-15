@@ -198,6 +198,63 @@ const PresetButton = ({ preset, active, onClick }) => (
   </button>
 );
 
+// ─── Settings Modal ──────────────────────────────────────────────────────────
+const SettingsModal = ({ show, onClose, manualDensity, setManualDensity, density, setDensity }) => {
+  if (!show) return null;
+  return (
+    <div className="settings-overlay" onClick={onClose}>
+      <div className="settings-modal" onClick={e => e.stopPropagation()}>
+        <button className="settings-close-btn" onClick={onClose}>
+          <X size={20} />
+        </button>
+        
+        <h2 className="text-xl font-mono tracking-widest text-[var(--color-accent-blue)] uppercase mb-6 flex items-center gap-3">
+          <Settings className="gear-rotate" /> Global Physics
+        </h2>
+
+        <div className="space-y-8">
+          {/* Manual Density Overdrive */}
+          <div className="p-4 rounded-2xl bg-white/5 border border-white/10">
+            <div className="flex items-center justify-between mb-4">
+              <div className="flex flex-col">
+                <span className="text-xs font-bold text-white tracking-wide uppercase">Manual Density Overdrive</span>
+                <span className="text-[10px] text-brand-400 font-mono">Override atmospheric presets</span>
+              </div>
+              <button 
+                onClick={() => setManualDensity(!manualDensity)}
+                className={`w-12 h-6 rounded-full transition-all relative ${manualDensity ? 'bg-[var(--color-accent-blue)]' : 'bg-brand-600'}`}
+              >
+                <div className={`absolute top-1 w-4 h-4 rounded-full bg-white transition-all ${manualDensity ? 'left-7' : 'left-1'}`} />
+              </button>
+            </div>
+
+            <div className={`transition-all duration-500 ${manualDensity ? 'opacity-100' : 'opacity-30 pointer-events-none'}`}>
+              <ControlSlider 
+                label="Air Density (ρ)" 
+                value={density} 
+                min={0.01} 
+                max={3.0} 
+                step={0.001}
+                unit="kg/m³" 
+                onChange={setDensity} 
+                accent="blue"
+              />
+              <div className="flex justify-between mt-2 px-1">
+                <span className="text-[9px] text-brand-500 font-mono">VACUUM (0.01)</span>
+                <span className="text-[9px] text-brand-500 font-mono">DEEP SEA (3.0)</span>
+              </div>
+            </div>
+          </div>
+
+          <div className="text-[10px] text-brand-500 font-mono italic text-center px-4">
+            "Density directly impacts Reynolds number and Dynamic Pressure. High density increases lift but drastically raises drag."
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+};
+
 // ─── Home ─────────────────────────────────────────────────────────────────────
 const Home = () => {
   const [isSimulating,  setIsSimulating]  = useState(false);
@@ -394,6 +451,7 @@ const Home = () => {
   };
 
   const applyPreset = (key) => {
+    if (manualDensity) setManualDensity(false);
     const p=ENV_PRESETS[key];
     setActivePreset(key); setDensity(p.density);
     setWindSpeed(p.windSpeed);
@@ -845,6 +903,7 @@ const Home = () => {
             <ControlSlider label="Pitch Angle"   value={pitchAngle}    min={-45} max={45}    unit="°"   onChange={setPitchAngle}    accent="blue"/>
           </div>
 
+
           {/* Live metrics */}
           <div
             className={`mt-4 border-t border-white/10 pt-3 flex-shrink-0 rounded-xl transition-[box-shadow,border-color] duration-500 ${
@@ -959,6 +1018,15 @@ const Home = () => {
         </div>
       )}
 
+      {/* Settings Modal Overlay */}
+      <SettingsModal 
+        show={showSettings} 
+        onClose={() => setShowSettings(false)}
+        manualDensity={manualDensity}
+        setManualDensity={setManualDensity}
+        density={density}
+        setDensity={setDensity}
+      />
     </div>
   );
 };

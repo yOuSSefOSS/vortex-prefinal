@@ -1,6 +1,6 @@
 import React from 'react';
 
-const ControlSlider = ({ label, value, min, max, unit, onChange, accent = "blue" }) => {
+const ControlSlider = ({ label, value, min, max, step = 1, unit, onChange, accent = "blue" }) => {
   const isNeon = accent === "neon";
   const accentColor = isNeon ? '#00f0ff' : '#0ea5e9';
   const range = max - min || 1;
@@ -32,7 +32,7 @@ const ControlSlider = ({ label, value, min, max, unit, onChange, accent = "blue"
           paddingTop: 4,
           transition: 'color 0.3s',
         }}>
-          {value}
+          {typeof value === 'number' ? value.toFixed(step < 1 ? Math.max(0, Math.ceil(-Math.log10(step))) : 0) : value}
           <span style={{
             fontSize: 11,
             color: '#475569',
@@ -74,6 +74,7 @@ const ControlSlider = ({ label, value, min, max, unit, onChange, accent = "blue"
           type="range" 
           min={min} 
           max={max} 
+          step={step}
           value={value} 
           onChange={(e) => onChange(Number(e.target.value))}
           style={{
