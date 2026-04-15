@@ -293,6 +293,8 @@ const Home = () => {
   const [showChat, setShowChat] = useState(false);
   const [manualDensity, setManualDensity] = useState(false);
   const [densityError, setDensityError] = useState('');
+  const [showSettings, setShowSettings] = useState(false);
+  const [manualDensity, setManualDensity] = useState(false);
   const fileInputRef = useRef(null);
   const densitySettingsRef = useRef(null);
   
