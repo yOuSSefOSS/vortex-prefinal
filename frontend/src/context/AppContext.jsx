@@ -75,6 +75,14 @@ export const AppProvider = ({ children }) => {
   useEffect(() => { localStorage.setItem('graphBounds', JSON.stringify(graphBounds)); }, [graphBounds]);
   useEffect(() => { localStorage.setItem('customAirfoils', JSON.stringify(customAirfoils)); }, [customAirfoils]);
 
+  // Persistent Simulation Environment State
+  const [activeShapeId, setActiveShapeId] = useState(null);
+  const [activePreset, setActivePreset] = useState('standard');
+  const [density, setDensity] = useState(1.225);
+  const [windSpeed, setWindSpeed] = useState(50);
+  const [pitchAngle, setPitchAngle] = useState(0);
+  const [flowActive, setFlowActive] = useState(false);
+
   const value = {
     useNeuralFoil, setUseNeuralFoil,
     units, setUnits,
@@ -86,7 +94,15 @@ export const AppProvider = ({ children }) => {
     customAirfoils, setCustomAirfoils,
     lastSimulationData, setLastSimulationData,
     activeShapeIdGlobal, setActiveShapeIdGlobal,
-    goldenLiftActive, setGoldenLiftActive
+    goldenLiftActive, setGoldenLiftActive,
+    
+    // Homed Simulation UI State
+    activeShapeId, setActiveShapeId,
+    activePreset, setActivePreset,
+    density, setDensity,
+    windSpeed, setWindSpeed,
+    pitchAngle, setPitchAngle,
+    flowActive, setFlowActive
   };
 
   return (

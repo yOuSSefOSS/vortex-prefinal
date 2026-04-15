@@ -6,7 +6,7 @@ import SimulationView from '../components/SimulationView';
 import DataChart from '../components/DataChart';
 import PolarChart from '../components/PolarChart';
 import AeroFactsPanel from '../components/AeroFactsPanel';
-import { Box, Circle, Upload, Mountain, Globe, Wind, Layers } from 'lucide-react';
+import { Box, Circle, Upload, Mountain, Globe, Wind, Layers, Settings } from 'lucide-react';
 
 // ─── Generic NACA 4-digit coordinate generator ───────────────────────────────
 const computeNACA = (m, p, t, N = 60) => {
@@ -37,8 +37,8 @@ const NACA0012_POINTS = computeNACA(0, 0, 0.12);
 
 // ─── Environment presets ──────────────────────────────────────────────────────
 const ENV_PRESETS = {
-  standard: { label:'Standard Air', sublabel:'Earth Sea Level', icon:<Globe size={13}/>, density:1.225, windSpeed:50,  particleCount:1000, color:'#00f0ff' },
-  highAlt:  { label:'High Altitude', sublabel:'Upper Troposphere', icon:<Mountain size={13}/>, density:0.414, windSpeed:80, particleCount:500,  color:'#a78bfa' },
+  standard: { label:'Standard Air', sublabel:'Sea Level', icon:<Globe size={13}/>, density:1.225, windSpeed:50,  particleCount:1000, color:'#00f0ff' },
+  highAlt:  { label:'High Altitude', sublabel:'~10 km', icon:<Mountain size={13}/>, density:0.414, windSpeed:80, particleCount:500,  color:'#a78bfa' },
 };
 
 // ─── Shapes library ───────────────────────────────────────────────────────────
@@ -180,36 +180,30 @@ const parseAirfoilDat = (text) => {
 const PresetButton = ({ preset, active, onClick }) => (
   <button
     onClick={onClick}
-    className={`${preset.shape} group transition-all duration-300 relative flex items-center justify-between p-4 w-full cursor-pointer overflow-hidden border-l-4`}
+    className={`${preset.shape} group transition-all duration-300 relative flex flex-col items-center justify-center p-3 w-full cursor-pointer overflow-hidden rounded-xl border`}
     style={{
-      background: active ? `${preset.color}20` : 'rgba(255,255,255,0.03)',
-      borderLeftColor: preset.color,
-      borderTop: 'none', borderRight: 'none', borderBottom: 'none',
+      background: active ? `${preset.color}15` : 'rgba(255,255,255,0.03)',
+      borderColor: active ? preset.color : 'rgba(255,255,255,0.1)',
       opacity: active ? 1 : 0.6,
-      height: '52px'
+      minHeight: '74px'
     }}
   >
-    <div className="flex flex-col items-start gap-0.5">
-      <span className="flex items-center gap-2 text-[10px] font-bold tracking-widest uppercase" style={{color: active ? preset.color : 'white'}}>
+    <div className="flex flex-col items-center gap-1 w-full">
+      <span className="flex items-center justify-center gap-2 text-[11px] font-bold tracking-wide" style={{color: active ? preset.color : 'white'}}>
         {preset.icon} {preset.label}
       </span>
-      <span className="text-[9px] opacity-60 font-mono">{preset.sublabel}</span>
-    </div>
-    <div className="text-right">
-       <span className="text-[10px] font-mono opacity-80" style={{color: preset.color}}>ρ {preset.density}</span>
+      <span className="text-[9px] opacity-60 font-mono text-center">{preset.sublabel}</span>
+      <span className="text-[9px] font-mono opacity-80 mt-0.5" style={{color: preset.color}}>ρ = {preset.density} kg/m³</span>
     </div>
   </button>
 );
 
 // ─── Home ─────────────────────────────────────────────────────────────────────
 const Home = () => {
-  const [activeShapeId, setActiveShapeId] = useState(null);
-  const [windSpeed,     setWindSpeed]     = useState(50);
-  const [pitchAngle,    setPitchAngle]    = useState(0);
   const [isSimulating,  setIsSimulating]  = useState(false);
   const [chartData,     setChartData]     = useState([]);
   
-  // Custom Airfoils State via Context
+  // Global Application State & Persistent View Models
   const {
     useNeuralFoil,
     units,
@@ -222,18 +216,37 @@ const Home = () => {
     setActiveShapeIdGlobal,
     goldenLiftActive,
     setGoldenLiftActive,
+    
+    activeShapeId,       setActiveShapeId,
+    activePreset,        setActivePreset,
+    density,             setDensity,
+    windSpeed,           setWindSpeed,
+    pitchAngle,          setPitchAngle,
+    flowActive,          setFlowActive,
   } = useAppContext();
 
   const [showImportModal, setShowImportModal] = useState(false);
   const [pendingAirfoil, setPendingAirfoil] = useState(null);
   const [pendingAirfoilName, setPendingAirfoilName] = useState('');
 
-  const [activePreset,  setActivePreset]  = useState('standard');
-  const [density,       setDensity]       = useState(1.225);
   const [importError,   setImportError]   = useState('');
-  const [flowActive,    setFlowActive]    = useState(false);
   const [aeroFactsActive, setAeroFactsActive] = useState(false);
+  const [showDensitySettings, setShowDensitySettings] = useState(false);
+  const [densityError, setDensityError] = useState('');
   const fileInputRef = useRef(null);
+  const densitySettingsRef = useRef(null);
+  
+  useEffect(() => {
+    const handleClickOutside = (e) => {
+      if (densitySettingsRef.current && !densitySettingsRef.current.contains(e.target)) {
+        setShowDensitySettings(false);
+      }
+    };
+    if (showDensitySettings) {
+      document.addEventListener('mousedown', handleClickOutside);
+    }
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, [showDensitySettings]);
 
   const [autotunePhase, setAutotunePhase] = useState('idle');
   const [autotuneProgress, setAutotuneProgress] = useState(null);
@@ -709,6 +722,8 @@ const Home = () => {
             liftForce={currentForce.lift}
             dragForce={currentForce.drag}
             isStalling={isStalling}
+            positiveStallAngle={positiveStallAngle}
+            negativeStallAngle={negativeStallAngle}
           />
 
           {/* Aero-Facts Learn Mode Panel */}
@@ -724,42 +739,122 @@ const Home = () => {
 
         {/* ── Right: Controls ── */}
         <div className="col-span-1 glass-panel p-6 flex flex-col max-h-[600px]">
-          <h2 className="text-sm font-mono tracking-widest text-[var(--color-accent-blue)] uppercase mb-4 flex-shrink-0">Atmosphere</h2>
-          <div className="flex flex-col gap-2 mb-6 flex-shrink-0">
+          <div ref={densitySettingsRef} className="relative flex justify-between items-center mb-2 flex-shrink-0 w-full">
+            <h2 className="text-sm font-mono tracking-widest text-[var(--color-accent-blue)] uppercase">Environment</h2>
+            <button 
+              onClick={() => setShowDensitySettings(!showDensitySettings)} 
+              className={`p-1.5 rounded-md transition-colors ${showDensitySettings ? 'bg-[var(--color-accent-blue)] text-white shadow-[0_0_10px_var(--color-accent-blue)]' : 'text-brand-300 hover:text-white hover:bg-white/5'}`}
+            >
+              <Settings size={14} className={showDensitySettings ? 'animate-[spin_4s_linear_infinite]' : ''}/>
+            </button>
+            
+            {showDensitySettings && (
+              <div className="absolute top-full left-0 w-full mt-2 bg-[#0a0f18] border border-[var(--color-accent-blue)]/40 rounded-xl p-6 shadow-[0_10px_40px_rgba(0,0,0,0.8)] z-50 overflow-hidden">
+                <div className="absolute top-0 right-0 w-32 h-32 bg-[var(--color-accent-blue)]/5 blur-[40px] pointer-events-none"/>
+                
+                <div className="flex justify-between items-center mb-5">
+                  <h3 className="text-sm font-mono font-bold text-white tracking-widest">AIR DENSITY (ρ)</h3>
+                  <button onClick={() => setShowDensitySettings(false)} className="text-brand-400 hover:text-white pb-1">✕</button>
+                </div>
+                
+                <div className="flex gap-3 mb-6 relative">
+                  <input 
+                    type="number" min="0.01" max="2.0" step="0.01" 
+                    value={density} 
+                    onBlur={() => {
+                      const val = parseFloat(density);
+                      if (isNaN(val) || val < 0.01 || val > 2.0) {
+                        setDensityError('Allowed range: 0.01 to 2.0 (Resetting)');
+                        setDensity(1.225);
+                        setTimeout(() => setDensityError(''), 2500);
+                      } else {
+                        setDensityError('');
+                      }
+                    }}
+                    onChange={(e) => { 
+                      const rawVal = e.target.value;
+                      setDensity(rawVal); 
+                      setActivePreset('custom'); 
+                      
+                      // Live validation warning
+                      if (rawVal !== '') {
+                        const val = parseFloat(rawVal);
+                        if (isNaN(val) || val < 0.01 || val > 2.0) {
+                          setDensityError('Allowed range: 0.01 to 2.0');
+                        } else {
+                          setDensityError('');
+                        }
+                      } else {
+                        setDensityError(''); // Don't warn on empty, wait for blur
+                      }
+                    }} 
+                    className={`w-full bg-black/50 border ${densityError ? 'border-red-500' : 'border-white/10'} rounded-lg px-4 py-3 text-base text-[var(--color-accent-neon)] font-mono focus:outline-none focus:border-[var(--color-accent-neon)] shadow-inner`}
+                  />
+                  <span className="text-xs text-brand-300 font-mono self-center px-2">kg/m³</span>
+                  {densityError && <div className="absolute -bottom-5 left-0 text-[10px] text-red-500 mt-1">{densityError}</div>}
+                </div>
+                
+                <div className="mb-6">
+                  <input 
+                    type="range" min="0.01" max="2.0" step="0.01" 
+                    value={density} 
+                    onChange={(e) => { setDensity(parseFloat(e.target.value)); setActivePreset('custom'); }} 
+                    className="w-full h-2 bg-brand-900 rounded-lg appearance-none cursor-pointer accent-[var(--color-accent-neon)]"
+                  />
+                  <div className="flex justify-between text-xs text-brand-400 font-mono mt-1.5 px-0.5">
+                    <span>0.01</span>
+                    <span>2.00</span>
+                  </div>
+                </div>
+                
+                <div className="text-xs text-brand-400 font-mono tracking-widest uppercase mb-3 mt-4">Flight Altitudes</div>
+                <div className="grid grid-cols-2 gap-3">
+                  <button onClick={() => { setDensity(1.225); setActivePreset('custom'); }} className={`flex flex-col items-center justify-center border rounded-lg py-3 transition-colors ${parseFloat(density) === 1.225 ? 'bg-[var(--color-accent-blue)]/15 border-[var(--color-accent-blue)] shadow-[0_0_12px_rgba(14,165,233,0.25)]' : 'border-white/10 hover:bg-[var(--color-accent-blue)]/10 hover:border-[var(--color-accent-blue)]/30'}`}>
+                     <span className={`text-[10px] mb-1 ${parseFloat(density) === 1.225 ? 'text-white' : 'text-brand-300'}`}>Sea Level</span>
+                     <span className="text-xs font-bold text-[var(--color-accent-blue)]">1.225</span>
+                  </button>
+                  <button onClick={() => { setDensity(0.905); setActivePreset('custom'); }} className={`flex flex-col items-center justify-center border rounded-lg py-3 transition-colors ${parseFloat(density) === 0.905 ? 'bg-[var(--color-accent-blue)]/15 border-[var(--color-accent-blue)] shadow-[0_0_12px_rgba(14,165,233,0.25)]' : 'border-white/10 hover:bg-[var(--color-accent-blue)]/10 hover:border-[var(--color-accent-blue)]/30'}`}>
+                     <span className={`text-[10px] mb-1 ${parseFloat(density) === 0.905 ? 'text-white' : 'text-brand-300'}`}>10,000 ft · 3 km</span>
+                     <span className="text-xs font-bold text-[var(--color-accent-blue)]">0.905</span>
+                  </button>
+                  <button onClick={() => { setDensity(0.458); setActivePreset('custom'); }} className={`flex flex-col items-center justify-center border rounded-lg py-3 transition-colors ${parseFloat(density) === 0.458 ? 'bg-[var(--color-accent-blue)]/15 border-[var(--color-accent-blue)] shadow-[0_0_12px_rgba(14,165,233,0.25)]' : 'border-white/10 hover:bg-[var(--color-accent-blue)]/10 hover:border-[var(--color-accent-blue)]/30'}`}>
+                     <span className={`text-[10px] mb-1 ${parseFloat(density) === 0.458 ? 'text-white' : 'text-brand-300'}`}>30,000 ft · 9 km</span>
+                     <span className="text-xs font-bold text-[var(--color-accent-blue)]">0.458</span>
+                  </button>
+                  <button onClick={() => { setDensity(0.302); setActivePreset('custom'); }} className={`flex flex-col items-center justify-center border rounded-lg py-3 transition-colors ${parseFloat(density) === 0.302 ? 'bg-[var(--color-accent-blue)]/15 border-[var(--color-accent-blue)] shadow-[0_0_12px_rgba(14,165,233,0.25)]' : 'border-white/10 hover:bg-[var(--color-accent-blue)]/10 hover:border-[var(--color-accent-blue)]/30'}`}>
+                     <span className={`text-[10px] mb-1 ${parseFloat(density) === 0.302 ? 'text-white' : 'text-brand-300'}`}>40,000 ft · 12 km</span>
+                     <span className="text-xs font-bold text-[var(--color-accent-blue)]">0.302</span>
+                  </button>
+                </div>
+              </div>
+            )}
+          </div>
+          
+          <div className="grid grid-cols-2 gap-3 mb-4 flex-shrink-0">
             {Object.entries(ENV_PRESETS).map(([key,preset])=>(
               <PresetButton key={key} preset={preset} active={activePreset===key} onClick={()=>applyPreset(key)}/>
             ))}
-            
-            {/* The Circle Settings Button from Mockup */}
-            <button
-               className="aero-shape-circle self-center mt-2 flex flex-col gap-1 items-center justify-center text-white/50 hover:text-[var(--color-accent-blue)] transition-all cursor-pointer"
-               title="Global Physics Settings"
-            >
-              <div className="w-5 h-0.5 bg-current" />
-              <div className="w-5 h-0.5 bg-current" />
-              <div className="w-5 h-0.5 bg-current" />
-            </button>
           </div>
 
-          <div className="border-t border-white/10 pt-4 mb-2 flex-shrink-0">
-            <h2 className="text-sm font-mono tracking-widest text-[var(--color-accent-blue)] uppercase mb-4">Parameters</h2>
+          <div className="border-t border-white/10 pt-3 mb-1 flex-shrink-0">
+            <h2 className="text-sm font-mono tracking-widest text-[var(--color-accent-blue)] uppercase mb-2">Parameters</h2>
           </div>
 
-          <div className="flex-1 overflow-y-auto pr-2 custom-scrollbar">
+          <div className="flex-1 overflow-y-auto pr-2 custom-scrollbar flex flex-col pt-2 pb-2">
             <ControlSlider label="Wind Speed"    value={windSpeed}     min={0}   max={300}   unit={units === 'imperial' ? 'mph' : 'm/s'} onChange={setWindSpeed}     accent="neon"/>
             <ControlSlider label="Pitch Angle"   value={pitchAngle}    min={-45} max={45}    unit="°"   onChange={setPitchAngle}    accent="blue"/>
           </div>
 
           {/* Live metrics */}
           <div
-            className={`mt-6 border-t border-white/10 pt-5 flex-shrink-0 rounded-xl transition-[box-shadow,border-color] duration-500 ${
+            className={`mt-4 border-t border-white/10 pt-3 flex-shrink-0 rounded-xl transition-[box-shadow,border-color] duration-500 ${
               goldenLiftActive
-                ? 'shadow-[0_0_32px_rgba(234,179,8,0.22),inset_0_0_24px_rgba(234,179,8,0.06)] border border-amber-500/35 p-4 -m-1 bg-amber-500/[0.04]'
+                ? 'shadow-[0_0_32px_rgba(234,179,8,0.22),inset_0_0_24px_rgba(234,179,8,0.06)] border border-amber-500/35 p-3 -m-1 bg-amber-500/[0.04]'
                 : ''
             }`}
           >
             <h2
-              className={`text-sm font-mono tracking-widest uppercase mb-4 ${
+              className={`text-sm font-mono tracking-widest uppercase mb-2 ${
                 goldenLiftActive ? 'text-amber-200/90' : 'text-[var(--color-accent-pink)]'
               }`}
             >
@@ -768,32 +863,32 @@ const Home = () => {
                 <span className="ml-2 text-[10px] font-normal text-amber-400/90 tracking-normal">· Golden optimum</span>
               )}
             </h2>
-            <div className="grid grid-cols-2 gap-3">
-              <div className="bg-brand-900/50 p-3 rounded-lg border border-white/5 flex flex-col justify-center">
-                <div className="flex justify-between items-end mb-1">
-                  <div className="text-xs text-brand-400 font-bold">DRAG <span className="font-normal opacity-70">(Cd)</span></div>
+            <div className="grid grid-cols-2 gap-2">
+              <div className="bg-brand-900/50 p-2 rounded-lg border border-white/5 flex flex-col justify-center">
+                <div className="flex justify-between items-end mb-0.5">
+                  <div className="text-[11px] text-brand-400 font-bold">DRAG <span className="font-normal opacity-70">(Cd)</span></div>
                   <div className="text-[10px] text-brand-500">{hasTarget ? currentForce.drag.toFixed(0) : '--'} N</div>
                 </div>
-                <div className="text-xl font-bold font-mono text-[var(--color-accent-pink)]">{isSimulating || !hasTarget ? '--' : currentAeroItem.cd.toFixed(3)}</div>
+                <div className="text-lg font-bold font-mono text-[var(--color-accent-pink)]">{isSimulating || !hasTarget ? '--' : currentAeroItem.cd.toFixed(3)}</div>
               </div>
-              <div className="bg-brand-900/50 p-3 rounded-lg border border-white/5 flex flex-col justify-center">
-                <div className="flex justify-between items-end mb-1">
-                  <div className="text-xs text-[var(--color-accent-neon)] font-bold">LIFT <span className="font-normal opacity-70">(Cl)</span></div>
+              <div className="bg-brand-900/50 p-2 rounded-lg border border-white/5 flex flex-col justify-center">
+                <div className="flex justify-between items-end mb-0.5">
+                  <div className="text-[11px] text-[var(--color-accent-neon)] font-bold">LIFT <span className="font-normal opacity-70">(Cl)</span></div>
                   <div className="text-[10px] text-brand-500">{hasTarget ? currentForce.lift.toFixed(0) : '--'} N</div>
                 </div>
-                <div className="text-xl font-bold font-mono text-[var(--color-accent-neon)] neon-text">{isSimulating || !hasTarget ? '--' : currentAeroItem.cl.toFixed(3)}</div>
+                <div className="text-lg font-bold font-mono text-[var(--color-accent-neon)] neon-text">{isSimulating || !hasTarget ? '--' : currentAeroItem.cl.toFixed(3)}</div>
               </div>
-              <div className="bg-brand-900/50 p-3 rounded-lg border border-white/5 col-span-2">
+              <div className="bg-brand-900/50 p-2 rounded-lg border border-white/5 col-span-2">
                 <div className="flex items-center justify-between">
                   <div>
-                    <div className="text-xs text-brand-400 mb-1">AIR DENSITY</div>
-                    <div className="text-sm font-bold font-mono" style={{color:ENV_PRESETS[activePreset].color}}>
+                    <div className="text-[11px] text-brand-400 mb-0.5">AIR DENSITY</div>
+                    <div className="text-sm font-bold font-mono" style={{color: ENV_PRESETS[activePreset]?.color || 'var(--color-accent-neon)'}}>
                        ρ = {density} <span className="text-[10px]">kg/m³</span>
                        {units === 'imperial' && <span className="text-[10px] text-brand-500 ml-2">({(density * 0.00194032).toFixed(4)} slug/ft³)</span>}
                     </div>
                   </div>
                   <div className="text-right">
-                    <div className="text-xs text-brand-400 mb-1">DYNAMIC PRESSURE</div>
+                    <div className="text-[11px] text-brand-400 mb-0.5">DYNAMIC PRESSURE</div>
                     <div className="text-sm font-bold font-mono text-white">
                        {(0.5 * density * Math.pow(windSpeed, 2)).toFixed(0)} <span className="text-[10px]">Pa</span>
                        {units === 'imperial' && <span className="text-[10px] text-brand-500 ml-2">({(0.5 * density * Math.pow(windSpeed, 2) * 0.0208854).toFixed(1)} psf)</span>}

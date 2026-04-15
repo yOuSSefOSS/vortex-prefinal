@@ -50,23 +50,47 @@ const ViewportGizmo = React.memo(({ cameraStr, onSnapView }) => {
 });
 
 // ─── AoA Gauge ────────────────────────────────────────────────────────────────
-const AoAGauge = React.memo(({ pitchAngle }) => {
-  const abs=Math.abs(pitchAngle), isStall=abs>14, isWarn=abs>10;
-  const clamp=Math.max(-45,Math.min(45,pitchAngle));
-  const nr=((clamp*2-90)*Math.PI)/180;
-  const GCX=70,GCY=70,R=52;
-  const nx=GCX+R*0.85*Math.cos(nr), ny=GCY+R*0.85*Math.sin(nr);
-  const arc=(s,e,col)=>{
-    const sr=((s-90)*Math.PI)/180, er=((e-90)*Math.PI)/180;
-    return <path d={`M${GCX+R*Math.cos(sr)},${GCY+R*Math.sin(sr)} A${R},${R} 0 0,1 ${GCX+R*Math.cos(er)},${GCY+R*Math.sin(er)}`} fill="none" stroke={col} strokeWidth={5} strokeLinecap="round"/>;
+const AoAGauge = React.memo(({ pitchAngle, positiveStallAngle, negativeStallAngle }) => {
+  const pStall = positiveStallAngle !== null ? positiveStallAngle : 15;
+  // If we have no negative stall data, we assume symmetric negative boundary
+  const nStall = negativeStallAngle !== null && negativeStallAngle !== positiveStallAngle ? negativeStallAngle : -pStall;
+  
+  const pWarn = Math.max(0, pStall - 4);
+  const nWarn = Math.min(0, nStall + 4);
+
+  const isStall = pitchAngle >= pStall || pitchAngle <= nStall;
+  const isWarn = pitchAngle >= pWarn || pitchAngle <= nWarn;
+
+  const clamp = Math.max(-45, Math.min(45, pitchAngle));
+  const nr = ((clamp * 2 - 90) * Math.PI) / 180;
+  const GCX = 70, GCY = 70, R = 52;
+  const nx = GCX + R * 0.85 * Math.cos(nr), ny = GCY + R * 0.85 * Math.sin(nr);
+
+  const arc = (sAoA, eAoA, col) => {
+    sAoA = Math.max(-45, Math.min(45, sAoA));
+    eAoA = Math.max(-45, Math.min(45, eAoA));
+    if (eAoA <= sAoA) return null;
+    
+    // Map AoA (-45 to 45) to semicircular angles (-90 to +90 degrees)
+    const s = sAoA * 2;
+    const e = eAoA * 2;
+    const sr = ((s - 90) * Math.PI) / 180, er = ((e - 90) * Math.PI) / 180;
+    return <path d={`M${GCX + R * Math.cos(sr)},${GCY + R * Math.sin(sr)} A${R},${R} 0 0,1 ${GCX + R * Math.cos(er)},${GCY + R * Math.sin(er)}`} fill="none" stroke={col} strokeWidth={5} strokeLinecap="round" />;
   };
+
   return (
     <div style={{position:'absolute',bottom:16,left:'50%',transform:'translateX(-50%)',zIndex:20,pointerEvents:'none',display:'flex',flexDirection:'column',alignItems:'center',gap:4}}>
-      {isStall&&<div style={{fontSize:11,fontFamily:'monospace',fontWeight:'bold',color:'#ff2200',textShadow:'0 0 12px #ff2200',background:'rgba(255,34,0,0.15)',border:'1px solid #ff2200',borderRadius:4,padding:'2px 10px',letterSpacing:'0.15em'}}>⚠ STALL</div>}
+      {isStall && <div style={{fontSize:11,fontFamily:'monospace',fontWeight:'bold',color:'#ff2200',textShadow:'0 0 12px #ff2200',background:'rgba(255,34,0,0.15)',border:'1px solid #ff2200',borderRadius:4,padding:'2px 10px',letterSpacing:'0.15em'}}>⚠ STALL</div>}
       <svg width={140} height={80} style={{overflow:'visible'}}>
-        {arc(-90,90,'rgba(255,255,255,0.08)')}{arc(-90,-26,'#2ECC71')}{arc(-26,18,'#F39C12')}{arc(18,90,'#E74C3C')}
-        <line x1={GCX} y1={GCY} x2={nx} y2={ny} stroke={isStall?'#ff2200':isWarn?'#F39C12':'#00f0ff'} strokeWidth={2.5} strokeLinecap="round"/>
-        <circle cx={GCX} cy={GCY} r={4} fill={isStall?'#ff2200':'#00f0ff'}/>
+        {arc(-45, 45, 'rgba(255,255,255,0.08)')}
+        {arc(-45, nStall, '#E74C3C')}
+        {arc(nStall, nWarn, '#F39C12')}
+        {arc(nWarn, pWarn, '#2ECC71')}
+        {arc(pWarn, pStall, '#F39C12')}
+        {arc(pStall, 45, '#E74C3C')}
+        
+        <line x1={GCX} y1={GCY} x2={nx} y2={ny} stroke={isStall ? '#ff2200' : isWarn ? '#F39C12' : '#00f0ff'} strokeWidth={2.5} strokeLinecap="round"/>
+        <circle cx={GCX} cy={GCY} r={4} fill={isStall ? '#ff2200' : '#00f0ff'}/>
         <text x={GCX} y={GCY+20} textAnchor="middle" fill="rgba(255,255,255,0.6)" fontSize="10" fontFamily="monospace" fontWeight="bold">{pitchAngle>0?'+':''}{pitchAngle}° AoA</text>
       </svg>
     </div>
@@ -294,7 +318,7 @@ const FlowParticles = ({ isActive, windSpeed, pitchAngle, airfoilPts }) => {
             vx *= speedBoost; vy *= speedBoost;
           }
         }
-      } else if (lx > -1.2 && lx < 1.0 && Math.abs(ly) < 1.2) {
+      } else if (!!airfoilPts && lx > -1.2 && lx < 1.0 && Math.abs(ly) < 1.2) {
         const xN = lx + halfC;
         let yt = 0, dyt = 0;
         if (xN > 0 && xN < 1) {
@@ -448,7 +472,7 @@ const FlowParticles = ({ isActive, windSpeed, pitchAngle, airfoilPts }) => {
 
   return (
     <>
-      <points ref={meshRef}>
+      <points ref={meshRef} key={`pts-${particleCount}`}>
         <bufferGeometry>
           <bufferAttribute attach="attributes-position" count={particleCount} array={positions} itemSize={3} />
           {colors.current && <bufferAttribute attach="attributes-color" count={particleCount} array={colors.current} itemSize={3} />}
@@ -465,7 +489,7 @@ const FlowParticles = ({ isActive, windSpeed, pitchAngle, airfoilPts }) => {
         />
       </points>
       {isStreak && (
-        <lineSegments ref={lineRef}>
+        <lineSegments ref={lineRef} key={`line-${particleCount}`}>
           <bufferGeometry>
             <bufferAttribute attach="attributes-position" count={lineVertexCount} array={linePositions} itemSize={3} />
             <bufferAttribute attach="attributes-color" count={lineVertexCount} array={lineColors} itemSize={3} />
@@ -857,11 +881,15 @@ const SimulationView = ({
   goldenLiftActive = false,
   aeroFactsActive = false,
   onAeroFactsToggle,
+  positiveStallAngle = null,
+  negativeStallAngle = null,
+  isPreview = false,
 }) => {
   const [cameraMode, setCameraMode] = useState('PERSPECTIVE');
   const [cameraStr, setCameraStr]   = useState({elev:'28.0',azim:'-55.0',mode:'PERSPECTIVE'});
   const [showHeatmap, setShowHeatmap]     = useState(false);
   const [turntableActive, setTurntable]   = useState(false);
+  const [showMenu, setShowMenu]           = useState(false);
   const snapRef = useRef(null);
   const handleSnap = useCallback((v)=>{ if(snapRef.current) snapRef.current(v); },[]);
 
@@ -877,23 +905,25 @@ const SimulationView = ({
       <div className="absolute inset-0 bg-[linear-gradient(to_right,#ffffff05_1px,transparent_1px),linear-gradient(to_bottom,#ffffff05_1px,transparent_1px)] bg-[size:2rem_2rem] opacity-50 z-0 pointer-events-none"/>
 
       {/* Top Left — Active target + AUTOTUNE */}
-      <div className="absolute top-4 left-6 right-6 z-10 flex flex-wrap items-start justify-between gap-3 pointer-events-none">
-        <div>
-          <h2 className="text-xl font-bold tracking-widest text-[var(--color-brand-100)] uppercase mt-2">Active Target</h2>
-          <div className="text-xs text-[var(--color-accent-blue)] font-mono mt-1 flex flex-wrap items-center gap-2">
-            <span className="max-w-[200px] truncate">{displayTargetName}</span>
-            {goldenLiftActive && !autotuneBusy && (
-              <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-mono uppercase tracking-wider bg-amber-500/15 text-amber-200 border border-amber-400/40 shadow-[0_0_12px_rgba(234,179,8,0.35)]">
-                <Sparkles size={11} className="text-amber-300" /> Golden
-              </span>
-            )}
-            <span className={`w-2 h-2 rounded-full shrink-0 ${isSimulating || autotuneBusy ? 'bg-[var(--color-accent-pink)] animate-pulse shadow-[0_0_10px_var(--color-accent-pink)]' : 'bg-transparent'}`}/>
+      {!isPreview && (
+        <div className="absolute top-4 left-6 right-6 z-10 flex flex-wrap items-start justify-between gap-3 pointer-events-none">
+          <div>
+            <h2 className="text-xl font-bold tracking-widest text-[var(--color-brand-100)] uppercase mt-2">Active Target</h2>
+            <div className="text-xs text-[var(--color-accent-blue)] font-mono mt-1 flex flex-wrap items-center gap-2">
+              <span className="max-w-[200px] truncate">{displayTargetName}</span>
+              {goldenLiftActive && !autotuneBusy && (
+                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-mono uppercase tracking-wider bg-amber-500/15 text-amber-200 border border-amber-400/40 shadow-[0_0_12px_rgba(234,179,8,0.35)]">
+                  <Sparkles size={11} className="text-amber-300" /> Golden
+                </span>
+              )}
+              <span className={`w-2 h-2 rounded-full shrink-0 ${isSimulating || autotuneBusy ? 'bg-[var(--color-accent-pink)] animate-pulse shadow-[0_0_10px_var(--color-accent-pink)]' : 'bg-transparent'}`}/>
+            </div>
           </div>
         </div>
-      </div>
+      )}
 
-      <ViewportGizmo cameraStr={cameraStr} onSnapView={handleSnap}/>
-      <AoAGauge pitchAngle={displayPitch}/>
+      {!isPreview && <ViewportGizmo cameraStr={cameraStr} onSnapView={handleSnap}/>}
+      {!isPreview && <AoAGauge pitchAngle={displayPitch} positiveStallAngle={positiveStallAngle} negativeStallAngle={negativeStallAngle} />}
 
       {autotuneBusy && autotuneProgress && (
         <div className="absolute inset-0 z-30 flex flex-col items-center justify-center bg-black/55 backdrop-blur-[2px] pointer-events-auto">
@@ -944,43 +974,66 @@ const SimulationView = ({
 
 
       {/* Toolbar bottom-left */}
-      <div style={{position:'absolute',bottom:16,left:16,zIndex:20,display:'flex',gap:6,flexWrap:'wrap'}}>
-        <VBtn label={flowActive?'⏸ PAUSE FLOW':'▶ START FLOW'} active={flowActive} disabled={!hasShape} onClick={onFlowToggle} color="#00f0ff"/>
-        <VBtn label="⬡ HEATMAP" active={showHeatmap} disabled={!hasShape} onClick={()=>setShowHeatmap(p=>!p)} color="#ff6600"/>
-        <VBtn label="⟳ TURNTABLE" active={turntableActive} disabled={!hasShape} onClick={()=>setTurntable(p=>!p)} color="#a78bfa"/>
-        {onAutotune && (
-          <div className="flex gap-2 relative">
-            <button
-              type="button"
-              onClick={() => onAutotune('light')}
-              disabled={!hasShape || autotuneBusy}
-              className="pointer-events-auto group relative flex items-center gap-1.5 px-3 py-1.5 rounded-md font-mono text-[10px] font-bold uppercase tracking-[0.1em] transition-all disabled:opacity-35 disabled:cursor-not-allowed border border-amber-400/50 bg-amber-500/10 text-amber-100 hover:bg-amber-500/20 hover:border-amber-300/80 shadow-[0_0_12px_rgba(234,179,8,0.15)] backdrop-blur-sm"
-              title="Quickly test ~30 basic airfoils"
-            >
-              <Sparkles size={13} className="text-amber-300 group-hover:scale-110 transition-transform" />
-              FAST TUNE
-            </button>
-            <button
-              type="button"
-              onClick={() => onAutotune('heavy')}
-              disabled={!hasShape || autotuneBusy}
-              className="pointer-events-auto group relative flex items-center gap-1.5 px-3 py-1.5 rounded-md font-mono text-[10px] font-bold uppercase tracking-[0.1em] transition-all disabled:opacity-35 disabled:cursor-not-allowed border border-amber-400/50 bg-amber-500/10 text-amber-100 hover:bg-amber-500/20 hover:border-amber-300/80 shadow-[0_0_12px_rgba(234,179,8,0.15)] backdrop-blur-sm"
-              title="Deep search of over 140 NACA permutations"
-            >
-              <Sparkles size={13} className="text-amber-300 group-hover:scale-110 transition-transform" />
-              DEEP SCAN
-            </button>
+      {!isPreview && (
+        <div style={{position:'absolute',bottom:16,left:16,zIndex:20,display:'flex',gap:8,alignItems:'flex-end'}}>
+          
+          <div className="relative">
+            {showMenu && (
+              <div className="absolute bottom-full mb-3 left-0 flex flex-col gap-2 p-3 bg-brand-900/90 border border-white/10 rounded-xl backdrop-blur-md shadow-[0_4px_30px_rgba(0,0,0,0.5)] min-w-[140px]">
+                <VBtn label="⬡ HEATMAP" active={showHeatmap} disabled={!hasShape} onClick={()=>setShowHeatmap(p=>!p)} color="#ff6600"/>
+                <VBtn label="⟳ TURNTABLE" active={turntableActive} disabled={!hasShape} onClick={()=>setTurntable(p=>!p)} color="#a78bfa"/>
+                {onAutotune && (
+                  <>
+                    <button
+                      type="button"
+                      onClick={() => { onAutotune('light'); setShowMenu(false); }}
+                      disabled={!hasShape || autotuneBusy}
+                      className="pointer-events-auto group relative flex items-center justify-center gap-1.5 px-3 py-2 rounded-md font-mono text-[10px] font-bold uppercase tracking-[0.1em] transition-all disabled:opacity-35 disabled:cursor-not-allowed border border-amber-400/50 bg-amber-500/10 text-amber-100 hover:bg-amber-500/20 hover:border-amber-300/80 shadow-[0_0_12px_rgba(234,179,8,0.15)] backdrop-blur-sm w-full"
+                      title="Quickly test ~30 basic airfoils"
+                    >
+                      <Sparkles size={13} className="text-amber-300 group-hover:scale-110 transition-transform" />
+                      FAST TUNE
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => { onAutotune('heavy'); setShowMenu(false); }}
+                      disabled={!hasShape || autotuneBusy}
+                      className="pointer-events-auto group relative flex items-center justify-center gap-1.5 px-3 py-2 rounded-md font-mono text-[10px] font-bold uppercase tracking-[0.1em] transition-all disabled:opacity-35 disabled:cursor-not-allowed border border-amber-400/50 bg-amber-500/10 text-amber-100 hover:bg-amber-500/20 hover:border-amber-300/80 shadow-[0_0_12px_rgba(234,179,8,0.15)] backdrop-blur-sm w-full"
+                      title="Deep search of over 140 NACA permutations"
+                    >
+                      <Sparkles size={13} className="text-amber-300 group-hover:scale-110 transition-transform" />
+                      DEEP SCAN
+                    </button>
+                  </>
+                )}
+                {onAeroFactsToggle && (
+                  <button
+                    onClick={() => { onAeroFactsToggle(); setShowMenu(false); }}
+                    className={`learn-mode-btn ${aeroFactsActive ? 'active' : 'inactive'} w-full !py-2`}
+                  >
+                    {aeroFactsActive ? '💡 LEARN ON' : '💡 LEARN'}
+                  </button>
+                )}
+              </div>
+            )}
+            
+            <VBtn 
+              label={
+                <div className="flex flex-col items-center justify-center gap-[3px] w-[14px] h-[14px]">
+                  <div className="w-[14px] h-[2px] bg-current rounded-sm" />
+                  <div className="w-[14px] h-[2px] bg-current rounded-sm" />
+                  <div className="w-[14px] h-[2px] bg-current rounded-sm" />
+                </div>
+              }
+              active={showMenu}
+              onClick={() => setShowMenu(!showMenu)}
+              color="#ffffff"
+            />
           </div>
-        )}
-        {onAeroFactsToggle && (
-          <button
-            onClick={onAeroFactsToggle}
-            className={`learn-mode-btn ${aeroFactsActive ? 'active' : 'inactive'}`}
-          >
-            {aeroFactsActive ? '💡 LEARN ON' : '💡 LEARN'}
-          </button>
-        )}
-      </div>
+
+          <VBtn label={flowActive?'⏸ PAUSE FLOW':'▶ START FLOW'} active={flowActive} disabled={!hasShape} onClick={onFlowToggle} color="#00f0ff"/>
+        </div>
+      )}
 
       {/* 3D Canvas */}
       <div className="absolute inset-0 z-0 cursor-crosshair">
@@ -1014,7 +1067,7 @@ const SimulationView = ({
               />
             )}
 
-            {!hasShape&&(
+            {!hasShape && !isPreview && (
               <Text position={[0,0,0]} rotation={[Math.PI/2,0,0]} color="#64748b" fontSize={0.1} anchorX="center" anchorY="middle">Empty Workspace</Text>
             )}
           </group>

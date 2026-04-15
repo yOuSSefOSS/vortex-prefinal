@@ -14,21 +14,22 @@ const ControlSlider = ({ label, value, min, max, unit, onChange, accent = "blue"
         alignItems: 'flex-end',
         marginBottom: 10,
       }}>
-        <label style={{
-          fontSize: 10,
+        <label className="font-mono" style={{
+          fontSize: 12,
           fontWeight: 700,
           letterSpacing: '0.18em',
           color: '#64748b',
           textTransform: 'uppercase',
-          fontFamily: 'monospace',
+          lineHeight: 'normal',
+          paddingTop: 4,
         }}>{label}</label>
-        <div style={{
-          fontFamily: 'monospace',
+        <div className="font-mono" style={{
           fontWeight: 700,
           fontSize: 22,
           color: accentColor,
           textShadow: `0 0 12px ${accentColor}44`,
-          lineHeight: 1,
+          lineHeight: 'normal',
+          paddingTop: 4,
           transition: 'color 0.3s',
         }}>
           {value}
@@ -37,6 +38,7 @@ const ControlSlider = ({ label, value, min, max, unit, onChange, accent = "blue"
             color: '#475569',
             marginLeft: 4,
             fontWeight: 400,
+            lineHeight: 'normal',
           }}>{unit}</span>
         </div>
       </div>
@@ -91,8 +93,8 @@ const ControlSlider = ({ label, value, min, max, unit, onChange, accent = "blue"
         justifyContent: 'space-between',
         marginTop: 4,
       }}>
-        <span style={{ fontSize: 9, color: '#334155', fontFamily: 'monospace' }}>{min}</span>
-        <span style={{ fontSize: 9, color: '#334155', fontFamily: 'monospace' }}>{max}</span>
+        <span className="font-mono" style={{ fontSize: 12, color: '#64748b' }}>{min}</span>
+        <span className="font-mono" style={{ fontSize: 12, color: '#64748b' }}>{max}</span>
       </div>
     </div>
   );
