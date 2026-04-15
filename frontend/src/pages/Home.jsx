@@ -6,7 +6,7 @@ import SimulationView from '../components/SimulationView';
 import DataChart from '../components/DataChart';
 import PolarChart from '../components/PolarChart';
 import AeroFactsPanel from '../components/AeroFactsPanel';
-import { Box, Circle, Upload, Mountain, Globe, Wind, Layers, Settings } from 'lucide-react';
+import { Box, Circle, Upload, Mountain, Globe, Wind, Layers, Settings, MessageSquare, Bot, X } from 'lucide-react';
 
 // ─── Generic NACA 4-digit coordinate generator ───────────────────────────────
 const computeNACA = (m, p, t, N = 60) => {
@@ -289,6 +289,9 @@ const Home = () => {
   const [importError,   setImportError]   = useState('');
   const [aeroFactsActive, setAeroFactsActive] = useState(false);
   const [showDensitySettings, setShowDensitySettings] = useState(false);
+  const [showSettings, setShowSettings] = useState(false);
+  const [showChat, setShowChat] = useState(false);
+  const [manualDensity, setManualDensity] = useState(false);
   const [densityError, setDensityError] = useState('');
   const fileInputRef = useRef(null);
   const densitySettingsRef = useRef(null);
@@ -799,12 +802,24 @@ const Home = () => {
         <div className="col-span-1 glass-panel p-6 flex flex-col max-h-[600px]">
           <div ref={densitySettingsRef} className="relative flex justify-between items-center mb-2 flex-shrink-0 w-full">
             <h2 className="text-sm font-mono tracking-widest text-[var(--color-accent-blue)] uppercase">Environment</h2>
-            <button 
-              onClick={() => setShowDensitySettings(!showDensitySettings)} 
-              className={`p-1.5 rounded-md transition-colors ${showDensitySettings ? 'bg-[var(--color-accent-blue)] text-white shadow-[0_0_10px_var(--color-accent-blue)]' : 'text-brand-300 hover:text-white hover:bg-white/5'}`}
-            >
-              <Settings size={14} className={showDensitySettings ? 'animate-[spin_4s_linear_infinite]' : ''}/>
-            </button>
+            <div className="flex items-center gap-2">
+              <button 
+                onClick={() => setShowChat(!showChat)} 
+                className={`p-1.5 rounded-md transition-all flex items-center gap-2 group ${showChat ? 'bg-[var(--color-accent-pink)] text-white shadow-[0_0_10px_rgba(236,72,153,0.5)]' : 'text-brand-300 hover:text-white hover:bg-white/5'}`}
+                title="AI Flight Assistant"
+              >
+                <Bot size={14} className={showChat ? 'animate-pulse' : ''} />
+                <span className="text-[10px] font-bold tracking-tighter opacity-0 group-hover:opacity-100 transition-opacity">COPILOT</span>
+              </button>
+
+              <button 
+                onClick={() => setShowSettings(!showSettings)} 
+                className={`p-1.5 rounded-md transition-colors ${showSettings ? 'bg-[var(--color-accent-blue)] text-white shadow-[0_0_10px_var(--color-accent-blue)]' : 'text-brand-300 hover:text-white hover:bg-white/5'}`}
+                title="Global Physics Settings"
+              >
+                <Settings size={14} className={showSettings ? 'animate-[spin_4s_linear_infinite]' : ''}/>
+              </button>
+            </div>
             
             {showDensitySettings && (
               <div className="absolute top-full left-0 w-full mt-2 bg-[#0a0f18] border border-[var(--color-accent-blue)]/40 rounded-xl p-6 shadow-[0_10px_40px_rgba(0,0,0,0.8)] z-50 overflow-hidden">
